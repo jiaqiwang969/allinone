@@ -1,11 +1,12 @@
 import os
 import subprocess
 import sys
-from pathlib import Path
+
+from tests._repo import repo_root
 
 
 def test_cli_module_invocation_runs_guidance_smoke():
-    root = Path("/Users/jqwang/31-allinone")
+    root = repo_root()
     env = dict(os.environ)
     env["PYTHONPATH"] = str(root / "src")
 

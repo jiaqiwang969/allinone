@@ -1,8 +1,10 @@
 from pathlib import Path
 
+from tests._repo import repo_root
+
 
 def test_architecture_mapping_docs_and_data_recipe_exist():
-    root = Path("/Users/jqwang/31-allinone")
+    root = repo_root()
     expected = {
         "docs/architecture/autoresearch-mapping.md": "ExperimentRun",
         "docs/architecture/perception-adapters.md": "YOLO",

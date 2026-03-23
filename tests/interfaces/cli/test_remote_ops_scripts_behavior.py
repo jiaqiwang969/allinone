@@ -1,8 +1,10 @@
 from pathlib import Path
 
+from tests._repo import repo_root
+
 
 def test_remote_ops_scripts_contain_real_sync_and_runtime_commands():
-    root = Path("/Users/jqwang/31-allinone")
+    root = repo_root()
     expectations = {
         "ops/remote/bootstrap_server.sh": [
             "python3 -m venv",
@@ -21,6 +23,7 @@ def test_remote_ops_scripts_contain_real_sync_and_runtime_commands():
         "ops/remote/run_runtime_loop.sh": [
             "/home/dell/workspaces/allinone",
             "python3 -m allinone.interfaces.cli.main guidance-smoke",
+            "python3 -m allinone.interfaces.cli.main language-smoke",
             "python3 -m allinone.interfaces.cli.main research-smoke",
         ],
     }

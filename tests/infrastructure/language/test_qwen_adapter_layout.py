@@ -1,6 +1,8 @@
 from importlib import import_module
 from pathlib import Path
 
+from tests._repo import repo_root
+
 
 def test_qwen_adapter_and_recipe_exist():
     modules = [
@@ -12,5 +14,5 @@ def test_qwen_adapter_and_recipe_exist():
         module = import_module(module_name)
         assert module is not None
 
-    recipe = Path("/Users/jqwang/31-allinone/configs/model_recipes/qwen35_9b.yaml")
+    recipe = repo_root() / "configs/model_recipes/qwen35_9b.yaml"
     assert recipe.exists()

@@ -1,8 +1,10 @@
 from pathlib import Path
 
+from tests._repo import repo_root
+
 
 def test_domain_layout_has_core_subdomains():
-    root = Path("/Users/jqwang/31-allinone/src/allinone/domain")
+    root = repo_root() / "src/allinone/domain"
     expected = {
         "session",
         "guidance",

@@ -9,5 +9,6 @@ ssh "$REMOTE_HOST" "
   . .venv/bin/activate && \
   export PYTHONPATH='$REMOTE_ROOT/src' && \
   python3 -m allinone.interfaces.cli.main guidance-smoke && \
+  python3 -m allinone.interfaces.cli.main language-smoke && \
   python3 -m allinone.interfaces.cli.main research-smoke
 "

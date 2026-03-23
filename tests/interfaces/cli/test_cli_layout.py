@@ -1,8 +1,10 @@
 from pathlib import Path
 
+from tests._repo import repo_root
+
 
 def test_cli_and_remote_scripts_exist():
-    root = Path("/Users/jqwang/31-allinone")
+    root = repo_root()
     expected = [
         "src/allinone/interfaces/cli/main.py",
         "ops/remote/bootstrap_server.sh",
