@@ -5,6 +5,7 @@ def test_perception_adapters_exist():
     modules = [
         "allinone.infrastructure.perception.yolo.detector",
         "allinone.infrastructure.perception.vjepa.encoder",
+        "allinone.infrastructure.perception.video.sampler",
         "allinone.infrastructure.perception.fusion.observation_builder",
     ]
     for module_name in modules:

@@ -61,3 +61,35 @@ def test_detection_candidate_exports_prediction_row():
         "confidence": 0.91,
         "xyxy": [600.0, 200.0, 900.0, 800.0],
     }
+
+
+def test_detector_adapter_selects_best_frame_by_geometry_and_confidence():
+    adapter = UltralyticsDetectorAdapter()
+
+    best_frame_index = adapter.select_best_frame_index(
+        frame_detections=[
+            [
+                DetectionCandidate(
+                    label="meter",
+                    confidence=0.7,
+                    bbox=BoundingBox(x1=0.55, y1=0.2, x2=0.68, y2=0.32),
+                )
+            ],
+            [
+                DetectionCandidate(
+                    label="meter",
+                    confidence=0.9,
+                    bbox=BoundingBox(x1=0.25, y1=0.2, x2=0.75, y2=0.8),
+                )
+            ],
+            [
+                DetectionCandidate(
+                    label="meter",
+                    confidence=0.95,
+                    bbox=BoundingBox(x1=0.02, y1=0.15, x2=0.28, y2=0.72),
+                )
+            ],
+        ]
+    )
+
+    assert best_frame_index == 1

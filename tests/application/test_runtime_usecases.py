@@ -1,5 +1,8 @@
 from PIL import Image
 
+from allinone.application.runtime.build_clip_perception_payload import (
+    build_raw_perception_payload_from_clip,
+)
 from allinone.application.runtime.build_raw_perception_payload import (
     build_raw_perception_payload_from_image,
 )
@@ -17,6 +20,8 @@ from allinone.domain.guidance.entities import GuidanceDecision
 from allinone.domain.perception.entities import PerceptionObservation
 from allinone.domain.session.entities import WorkSession
 from allinone.domain.shared.value_objects import BoundingBox, CenterOffset, SessionId, StageType
+from allinone.infrastructure.perception.video.sampler import SampledClip
+from allinone.infrastructure.perception.vjepa.encoder import ClipQualitySignal
 from allinone.infrastructure.perception.yolo.detector import DetectionCandidate
 
 
@@ -136,4 +141,200 @@ def test_build_raw_perception_payload_from_image_reads_size_and_exports_rows(
             "visibility_score": 1.0,
             "readable_ratio": 1.0,
         },
+    }
+
+
+def test_build_raw_perception_payload_from_clip_organizes_sampled_frames(
+    tmp_path,
+):
+    clip_path = tmp_path / "inspection.mp4"
+    clip_path.write_text("placeholder", encoding="utf-8")
+
+    class FakeSampler:
+        def sample(self, *, clip_path):
+            assert clip_path.endswith("inspection.mp4")
+            return {
+                "frames": ["frame-0", "frame-5", "frame-9"],
+                "frame_indices": [0, 5, 9],
+                "image_size": (1280, 720),
+            }
+
+    class FakeDetector:
+        def predict_sampled_frames(self, *, sampled_frames, image_size, target_labels):
+            assert sampled_frames == ["frame-0", "frame-5", "frame-9"]
+            assert image_size == (1280, 720)
+            assert target_labels == ("meter",)
+            return {
+                "prediction_rows": [
+                    {
+                        "label": "meter",
+                        "confidence": 0.95,
+                        "xyxy": [320.0, 80.0, 980.0, 640.0],
+                    }
+                ]
+            }
+
+    class FakeClipScorer:
+        def score_clip(self, *, sampled_frames, frame_indices, image_size):
+            assert sampled_frames == ["frame-0", "frame-5", "frame-9"]
+            assert frame_indices == [0, 5, 9]
+            assert image_size == (1280, 720)
+            return {
+                "visibility_score": 0.86,
+                "readable_ratio": 0.79,
+                "stability_score": 0.91,
+                "alignment_score": 0.84,
+            }
+
+    payload = build_raw_perception_payload_from_clip(
+        clip_path=str(clip_path),
+        target_labels=("meter",),
+        sampler=FakeSampler(),
+        detector=FakeDetector(),
+        clip_scorer=FakeClipScorer(),
+    )
+
+    assert payload == {
+        "detections": {
+            "prediction_rows": [
+                {
+                    "label": "meter",
+                    "confidence": 0.95,
+                    "xyxy": [320.0, 80.0, 980.0, 640.0],
+                }
+            ],
+            "image_size": [1280, 720],
+            "target_labels": ["meter"],
+        },
+        "vjepa": {
+            "visibility_score": 0.86,
+            "readable_ratio": 0.79,
+            "stability_score": 0.91,
+            "alignment_score": 0.84,
+        },
+    }
+
+
+def test_build_raw_perception_payload_from_clip_keeps_best_frame_and_clip_scores(
+    tmp_path,
+):
+    clip_path = tmp_path / "inspection.mp4"
+    clip_path.write_text("placeholder", encoding="utf-8")
+
+    class FakeSampler:
+        def sample(self, *, clip_path):
+            assert clip_path.endswith("inspection.mp4")
+            return SampledClip(
+                frames=["frame-0", "frame-5", "frame-9"],
+                frame_indices=[0, 5, 9],
+                image_size=(1280, 720),
+            )
+
+    class FakeDetector:
+        def predict_sampled_frames(self, *, sampled_frames, image_size, target_labels):
+            assert sampled_frames == ["frame-0", "frame-5", "frame-9"]
+            assert image_size == (1280, 720)
+            assert target_labels == ("meter",)
+            return {
+                "prediction_rows": [
+                    {
+                        "label": "meter",
+                        "confidence": 0.97,
+                        "xyxy": [300.0, 90.0, 1000.0, 650.0],
+                    }
+                ],
+                "best_frame_index": 1,
+            }
+
+    class FakeClipScorer:
+        def score_clip(self, *, sampled_frames, frame_indices, image_size):
+            assert sampled_frames == ["frame-0", "frame-5", "frame-9"]
+            assert frame_indices == [0, 5, 9]
+            assert image_size == (1280, 720)
+            return {
+                "visibility_score": 0.88,
+                "readable_ratio": 0.81,
+                "stability_score": 0.92,
+                "alignment_score": 0.87,
+            }
+
+    payload = build_raw_perception_payload_from_clip(
+        clip_path=str(clip_path),
+        target_labels=("meter",),
+        sampler=FakeSampler(),
+        detector=FakeDetector(),
+        clip_scorer=FakeClipScorer(),
+    )
+
+    assert payload == {
+        "detections": {
+            "prediction_rows": [
+                {
+                    "label": "meter",
+                    "confidence": 0.97,
+                    "xyxy": [300.0, 90.0, 1000.0, 650.0],
+                }
+            ],
+            "image_size": [1280, 720],
+            "target_labels": ["meter"],
+            "best_frame_index": 1,
+        },
+        "vjepa": {
+            "visibility_score": 0.88,
+            "readable_ratio": 0.81,
+            "stability_score": 0.92,
+            "alignment_score": 0.87,
+        },
+    }
+
+
+def test_build_raw_perception_payload_from_clip_accepts_dataclass_quality_signal(
+    tmp_path,
+):
+    clip_path = tmp_path / "inspection.mp4"
+    clip_path.write_text("placeholder", encoding="utf-8")
+
+    class FakeSampler:
+        def sample(self, *, clip_path):
+            return SampledClip(
+                frames=["frame-0", "frame-5"],
+                frame_indices=[0, 5],
+                image_size=(1280, 720),
+            )
+
+    class FakeDetector:
+        def predict_sampled_frames(self, *, sampled_frames, image_size, target_labels):
+            return {
+                "prediction_rows": [
+                    {
+                        "label": "person",
+                        "confidence": 0.93,
+                        "xyxy": [280.0, 100.0, 1030.0, 680.0],
+                    }
+                ],
+                "best_frame_index": 0,
+            }
+
+    class FakeClipScorer:
+        def score_clip(self, *, sampled_frames, frame_indices, image_size):
+            return ClipQualitySignal(
+                visibility_score=0.9,
+                readable_ratio=0.83,
+                stability_score=0.94,
+                alignment_score=0.89,
+            )
+
+    payload = build_raw_perception_payload_from_clip(
+        clip_path=str(clip_path),
+        target_labels=("person",),
+        sampler=FakeSampler(),
+        detector=FakeDetector(),
+        clip_scorer=FakeClipScorer(),
+    )
+
+    assert payload["vjepa"] == {
+        "visibility_score": 0.9,
+        "readable_ratio": 0.83,
+        "stability_score": 0.94,
+        "alignment_score": 0.89,
     }

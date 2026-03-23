@@ -7,6 +7,9 @@ import json
 import os
 from pathlib import Path
 
+from allinone.application.runtime.build_clip_perception_payload import (
+    build_raw_perception_payload_from_clip,
+)
 from allinone.application.runtime.build_raw_perception_payload import (
     build_raw_perception_payload_from_image,
 )
@@ -24,6 +27,11 @@ from allinone.infrastructure.language.qwen.client import QwenClient
 from allinone.infrastructure.language.qwen.prompt_builder import QwenPromptBuilder
 from allinone.infrastructure.language.qwen.structured_output import (
     QwenStructuredOutputParser,
+)
+from allinone.infrastructure.perception.video.sampler import ClipFrameSampler
+from allinone.infrastructure.perception.vjepa.encoder import VJEPAEncoderAdapter
+from allinone.infrastructure.perception.yolo.detector import (
+    UltralyticsDetectorAdapter,
 )
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
@@ -47,6 +55,15 @@ def _build_parser() -> argparse.ArgumentParser:
     detect_image.add_argument("--targets", required=True)
     detect_image.add_argument("--output", required=True)
     detect_image.add_argument("--device", required=False)
+    analyze_clip = subparsers.add_parser("analyze-clip")
+    analyze_clip.add_argument("--clip", required=True)
+    analyze_clip.add_argument("--yolo-model", required=True)
+    analyze_clip.add_argument("--vjepa-repo", required=True)
+    analyze_clip.add_argument("--vjepa-checkpoint", required=True)
+    analyze_clip.add_argument("--targets", required=True)
+    analyze_clip.add_argument("--output", required=True)
+    analyze_clip.add_argument("--device", required=False)
+    analyze_clip.add_argument("--sample-frames", required=False, type=int, default=8)
     build_observation_payload = subparsers.add_parser("build-observation-payload")
     build_observation_payload.add_argument("--input", required=True)
     build_observation_payload.add_argument("--output", required=True)
@@ -114,6 +131,39 @@ def _run_detect_image(
         ),
         model_path=model_path,
         device=device,
+    )
+    Path(output_path).write_text(
+        json.dumps(raw_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return 0
+
+
+def _run_analyze_clip(
+    clip_path: str,
+    yolo_model_path: str,
+    vjepa_repo: str,
+    vjepa_checkpoint: str,
+    targets: str,
+    output_path: str,
+    device: str | None,
+    sample_frames: int,
+) -> int:
+    raw_payload = build_raw_perception_payload_from_clip(
+        clip_path=clip_path,
+        target_labels=tuple(
+            item.strip() for item in targets.split(",") if item.strip()
+        ),
+        sampler=ClipFrameSampler(frame_count=sample_frames),
+        detector=UltralyticsDetectorAdapter(
+            model_path=yolo_model_path,
+            device=device,
+        ),
+        clip_scorer=VJEPAEncoderAdapter(
+            repo_path=vjepa_repo,
+            checkpoint_path=vjepa_checkpoint,
+            device=device,
+        ),
     )
     Path(output_path).write_text(
         json.dumps(raw_payload, ensure_ascii=False, indent=2),
@@ -203,6 +253,17 @@ def main(argv: list[str] | None = None) -> int:
             targets=args.targets,
             output_path=args.output,
             device=args.device,
+        )
+    if args.command == "analyze-clip":
+        return _run_analyze_clip(
+            clip_path=args.clip,
+            yolo_model_path=args.yolo_model,
+            vjepa_repo=args.vjepa_repo,
+            vjepa_checkpoint=args.vjepa_checkpoint,
+            targets=args.targets,
+            output_path=args.output,
+            device=args.device,
+            sample_frames=args.sample_frames,
         )
     if args.command == "build-observation-payload":
         return _run_build_observation_payload(args.input, args.output)
