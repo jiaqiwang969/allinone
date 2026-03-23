@@ -8,11 +8,15 @@ def test_remote_ops_scripts_contain_real_sync_and_runtime_commands():
             "python3 -m venv",
             "pip install -e",
             "/home/dell/workspaces/allinone",
+            "--exclude '.venv'",
+            "--exclude '.worktrees'",
         ],
         "ops/remote/sync_to_server.sh": [
             "rsync",
             "dell@192.168.1.104",
             "/home/dell/workspaces/allinone",
+            "--exclude '.venv'",
+            "--exclude '.worktrees'",
         ],
         "ops/remote/run_runtime_loop.sh": [
             "/home/dell/workspaces/allinone",

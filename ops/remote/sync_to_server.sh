@@ -6,6 +6,8 @@ REMOTE_ROOT="${REMOTE_ROOT:-/home/dell/workspaces/allinone}"
 
 rsync -av --delete \
   --exclude '.git' \
+  --exclude '.worktrees' \
+  --exclude '.venv' \
   --exclude '.pytest_cache' \
   --exclude '__pycache__' \
   ./ "$REMOTE_HOST:$REMOTE_ROOT/"
