@@ -7,6 +7,7 @@ def test_application_usecase_modules_exist():
         "allinone.application.runtime.build_raw_perception_payload",
         "allinone.application.runtime.build_observation_payload",
         "allinone.application.runtime.ingest_observation_window",
+        "allinone.application.runtime.run_runtime_observation",
         "allinone.application.runtime.request_guidance_decision",
         "allinone.application.runtime.capture_evidence",
         "allinone.application.session.open_session",

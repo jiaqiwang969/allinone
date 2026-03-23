@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 from allinone.application.runtime.build_clip_perception_payload import (
@@ -20,13 +19,11 @@ from allinone.application.research.register_experiment import register_experimen
 from allinone.application.runtime.ingest_observation_window import (
     ingest_observation_window,
 )
+from allinone.application.runtime.run_runtime_observation import (
+    run_runtime_observation as run_runtime_observation_usecase,
+)
 from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
-)
-from allinone.infrastructure.language.qwen.client import QwenClient
-from allinone.infrastructure.language.qwen.prompt_builder import QwenPromptBuilder
-from allinone.infrastructure.language.qwen.structured_output import (
-    QwenStructuredOutputParser,
 )
 from allinone.infrastructure.perception.video.sampler import ClipFrameSampler
 from allinone.infrastructure.perception.vjepa.encoder import VJEPAEncoderAdapter
@@ -36,13 +33,6 @@ from allinone.infrastructure.perception.yolo.detector import (
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
 )
-
-_DEFAULT_LANGUAGE_SMOKE_OUTPUT = """{
-    "operator_message": "请向左移动，让仪表回到画面中央。",
-    "suggested_action": "left",
-    "confidence": 0.82,
-    "evidence_focus": "确保整个表盘完整可见"
-}"""
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -173,74 +163,38 @@ def _run_analyze_clip(
 
 
 def _run_language_smoke() -> int:
-    observation = _build_sample_observation()
-    return _print_guidance_and_language(observation)
+    result = run_runtime_observation_usecase(payload=_build_sample_payload())
+    return _print_runtime_result(result)
 
 
 def _run_runtime_observation(input_path: str) -> int:
     payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
-    observation = ingest_observation_window(
-        prediction_rows=payload["prediction_rows"],
-        image_size=tuple(payload["image_size"]),
-        target_labels=tuple(payload["target_labels"]),
-        visibility_score=float(payload["visibility_score"]),
-        readable_ratio=float(payload["readable_ratio"]),
-    )
-    return _print_guidance_and_language(observation)
+    result = run_runtime_observation_usecase(payload=payload)
+    return _print_runtime_result(result)
 
 
-def _build_sample_observation():
-    return ingest_observation_window(
-        prediction_rows=[
+def _build_sample_payload() -> dict[str, object]:
+    return {
+        "prediction_rows": [
             {"label": "meter", "confidence": 0.91, "xyxy": [600, 200, 900, 800]},
         ],
-        image_size=(1000, 1000),
-        target_labels=("meter",),
-        visibility_score=0.85,
-        readable_ratio=0.8,
-    )
+        "image_size": [1000, 1000],
+        "target_labels": ["meter"],
+        "visibility_score": 0.85,
+        "readable_ratio": 0.8,
+    }
 
 
-def _print_guidance_and_language(observation) -> int:
-    decision = request_guidance_decision(observation)
-    prompt = QwenPromptBuilder().build_guidance_explanation_prompt(
-        observation=observation,
-        decision=decision,
-    )
-    parsed, source = _generate_language_explanation(prompt)
+def _print_runtime_result(result: dict[str, object]) -> int:
     print(
-        f"guidance_action={decision.action.value} "
-        f"reason={decision.reason} "
-        f"language_action={parsed.suggested_action} "
-        f"confidence={parsed.confidence:.2f} "
-        f"source={source} "
-        f"message={parsed.operator_message}"
+        f"guidance_action={result['guidance_action']} "
+        f"reason={result['reason']} "
+        f"language_action={result['language_action']} "
+        f"confidence={float(result['confidence']):.2f} "
+        f"source={result['language_source']} "
+        f"message={result['operator_message']}"
     )
     return 0
-
-
-def _resolve_qwen_recipe_path() -> Path:
-    override = os.environ.get("ALLINONE_QWEN_RECIPE")
-    if override:
-        return Path(override)
-    return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen35_9b.yaml"
-
-
-def _generate_language_explanation(prompt: str):
-    parser = QwenStructuredOutputParser()
-    recipe = _resolve_qwen_recipe_path()
-    if recipe.exists():
-        try:
-            client = QwenClient.from_recipe(recipe)
-            if client.is_runtime_available():
-                raw_text = client.generate_text(prompt)
-                return parser.parse_guidance_explanation(raw_text), "qwen"
-        except RuntimeError:
-            pass
-    return (
-        parser.parse_guidance_explanation(_DEFAULT_LANGUAGE_SMOKE_OUTPUT),
-        "mock",
-    )
 
 
 def main(argv: list[str] | None = None) -> int:

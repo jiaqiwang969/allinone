@@ -338,3 +338,58 @@ def test_build_raw_perception_payload_from_clip_accepts_dataclass_quality_signal
         "stability_score": 0.94,
         "alignment_score": 0.89,
     }
+
+
+def test_run_runtime_observation_returns_structured_runtime_result():
+    from allinone.application.runtime.run_runtime_observation import (
+        run_runtime_observation,
+    )
+
+    class FakePromptBuilder:
+        def build_guidance_explanation_prompt(self, *, observation, decision):
+            assert observation.visibility_score == 0.85
+            assert observation.readable_ratio == 0.8
+            assert decision.action.value == "left"
+            assert decision.reason == "target_shifted_right"
+            return "prompt-for-qwen"
+
+    class FakeTextGenerator:
+        def generate(self, prompt: str):
+            assert prompt == "prompt-for-qwen"
+            return (
+                """{
+                    "operator_message": "请向左移动，让仪表回到画面中央。",
+                    "suggested_action": "left",
+                    "confidence": 0.82,
+                    "evidence_focus": "确保整个表盘完整可见"
+                }""",
+                "fake-qwen",
+            )
+
+    result = run_runtime_observation(
+        payload={
+            "prediction_rows": [
+                {
+                    "label": "meter",
+                    "confidence": 0.91,
+                    "xyxy": [600, 200, 900, 800],
+                }
+            ],
+            "image_size": [1000, 1000],
+            "target_labels": ["meter"],
+            "visibility_score": 0.85,
+            "readable_ratio": 0.8,
+        },
+        prompt_builder=FakePromptBuilder(),
+        text_generator=FakeTextGenerator(),
+    )
+
+    assert result == {
+        "guidance_action": "left",
+        "reason": "target_shifted_right",
+        "language_action": "left",
+        "confidence": 0.82,
+        "operator_message": "请向左移动，让仪表回到画面中央。",
+        "evidence_focus": "确保整个表盘完整可见",
+        "language_source": "fake-qwen",
+    }
