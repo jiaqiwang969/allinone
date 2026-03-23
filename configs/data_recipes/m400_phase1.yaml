@@ -1,0 +1,60 @@
+version: 1
+name: m400_phase1
+strategy: public_ontology_first
+
+session_schema:
+  root_entity: session
+  description: >
+    一次完整的头戴式远程工业作业会话。session 下挂 clip、frame、event、roi、evidence、
+    transcript、stage、tool、defect，用于支撑 guidance、evidence、research 的闭环。
+
+phase_goal:
+  primary_task: head_worn_video_guidance
+  target_output:
+    - guide_worker_to_best_view
+    - auto_capture_valid_evidence
+    - support_research_replay
+
+public_sources:
+  - name: egocentric_10k
+    role:
+      - session_like_video_source
+      - stage_transition_prior
+      - viewpoint_stability_prior
+    keep_policy: select_high_value_subset_before_training
+  - name: image_based_meter_reading_collections
+    role:
+      - roi_detection_bootstrap
+      - readable_window_bootstrap
+      - synthetic_video_generation_seed
+
+future_private_sources:
+  - name: m400_remote_quality_sessions
+    role:
+      - real_session_ground_truth
+      - prompt_effectiveness_feedback
+      - evidence_acceptance_feedback
+
+labels:
+  yolo:
+    - control_panel
+    - meter
+    - caliper
+    - roi_window
+  session:
+    - task_type
+    - stage_type
+    - evidence_required
+    - evidence_collected
+    - guidance_action
+
+acceptance_policy:
+  capture_stage_requires:
+    - screenshot
+    - clip
+
+research_loop:
+  judge_targets:
+    - guidance_success_rate
+    - evidence_acceptance_rate
+    - readable_frame_ratio
