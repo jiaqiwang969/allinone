@@ -1,0 +1,1 @@
+"""Research value objects."""

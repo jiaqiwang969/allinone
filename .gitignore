@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual envs
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+
+# Logs and checkpoints
+logs/
+checkpoints/
+artifacts/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Data and caches
+data/
+datasets/
+cache/
+.cache/
+hf_cache/
+
+# Local experiment outputs
+results/
+outputs/
+tmp/
