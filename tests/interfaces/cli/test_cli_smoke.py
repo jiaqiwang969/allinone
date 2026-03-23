@@ -99,6 +99,46 @@ def test_build_observation_payload_command_writes_standard_payload(tmp_path):
     }
 
 
+def test_build_observation_payload_command_auto_creates_output_parent(tmp_path):
+    raw_input = tmp_path / "raw-perception.json"
+    output = tmp_path / "nested" / "payloads" / "payload.json"
+    raw_input.write_text(
+        json.dumps(
+            {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "meter",
+                            "confidence": 0.91,
+                            "xyxy": [600, 200, 900, 800],
+                        }
+                    ],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                },
+                "vjepa": {
+                    "visibility_score": 0.85,
+                    "readable_ratio": 0.8,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "build-observation-payload",
+            "--input",
+            str(raw_input),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert exit_code == 0
+    assert output.exists()
+
+
 def test_detect_image_command_writes_raw_perception_payload(tmp_path, monkeypatch):
     image_path = tmp_path / "frame.png"
     output = tmp_path / "raw.json"
@@ -143,6 +183,57 @@ def test_detect_image_command_writes_raw_perception_payload(tmp_path, monkeypatc
     assert exit_code == 0
     assert payload["detections"]["target_labels"] == ["meter"]
     assert payload["vjepa"]["visibility_score"] == 1.0
+
+
+def test_analyze_clip_command_auto_creates_output_parent(tmp_path, monkeypatch):
+    clip_path = tmp_path / "clip.mp4"
+    output = tmp_path / "nested" / "analysis" / "clip-raw.json"
+    clip_path.write_text("placeholder", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "allinone.interfaces.cli.main.build_raw_perception_payload_from_clip",
+        lambda **kwargs: {
+            "detections": {
+                "prediction_rows": [
+                    {
+                        "label": "meter",
+                        "confidence": 0.97,
+                        "xyxy": [300, 90, 1000, 650],
+                    }
+                ],
+                "image_size": [1280, 720],
+                "target_labels": ["meter"],
+                "best_frame_index": 2,
+            },
+            "vjepa": {
+                "visibility_score": 0.88,
+                "readable_ratio": 0.81,
+                "stability_score": 0.92,
+                "alignment_score": 0.87,
+            },
+        },
+    )
+
+    exit_code = main(
+        [
+            "analyze-clip",
+            "--clip",
+            str(clip_path),
+            "--yolo-model",
+            "mock-yolo.pt",
+            "--vjepa-repo",
+            "/models/vjepa2",
+            "--vjepa-checkpoint",
+            "/models/vjepa2/model.pt",
+            "--targets",
+            "meter",
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert exit_code == 0
+    assert output.exists()
 
 
 def test_analyze_clip_command_writes_clip_raw_perception_payload(
@@ -722,6 +813,7 @@ def test_build_guidance_replay_dataset_command_writes_manifest_and_raw_cases(
     assert exit_code == 0
     assert (output_dir / "raw" / "tight_center_boundary.json").exists()
     assert (output_dir / "raw" / "direction_trigger_boundary.json").exists()
+    assert (output_dir / "raw" / "reverse_direction_trigger_boundary.json").exists()
     assert (output_dir / "raw" / "oversize_boundary.json").exists()
     assert manifest_rows == [
         {
@@ -741,6 +833,16 @@ def test_build_guidance_replay_dataset_command_writes_manifest_and_raw_cases(
             "expected_reason": "target_shifted_right",
         },
         {
+            "clip_id": "reverse_direction_trigger_boundary",
+            "raw_payload_path": str(
+                output_dir / "raw" / "reverse_direction_trigger_boundary.json"
+            ),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "right",
+            "expected_reason": "target_shifted_left",
+        },
+        {
             "clip_id": "oversize_boundary",
             "raw_payload_path": str(output_dir / "raw" / "oversize_boundary.json"),
             "target_labels": ["person"],
@@ -750,4 +852,4 @@ def test_build_guidance_replay_dataset_command_writes_manifest_and_raw_cases(
         },
     ]
     assert f"manifest={output_dir / 'manifest.jsonl'}" in captured.out
-    assert "case_count=3" in captured.out
+    assert "case_count=4" in captured.out

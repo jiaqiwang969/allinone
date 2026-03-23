@@ -26,6 +26,7 @@ The command writes:
 
 - `raw/tight_center_boundary.json`
 - `raw/direction_trigger_boundary.json`
+- `raw/reverse_direction_trigger_boundary.json`
 - `raw/oversize_boundary.json`
 - `manifest.jsonl`
 

@@ -59,6 +59,17 @@ class GuidanceBoundaryDatasetBuilder:
                 "expected_reason": "target_shifted_right",
             },
             {
+                "clip_id": "reverse_direction_trigger_boundary",
+                "bbox": self._shift_bbox(
+                    width=base_width,
+                    height=base_height,
+                    center_x=0.3335,
+                    center_y=0.5,
+                ),
+                "expected_action": "right",
+                "expected_reason": "target_shifted_left",
+            },
+            {
                 "clip_id": "oversize_boundary",
                 "bbox": self._centered_square(area=0.87125),
                 "expected_action": "hold_still",

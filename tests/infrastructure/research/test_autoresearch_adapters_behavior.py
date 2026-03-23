@@ -718,10 +718,11 @@ def test_guidance_boundary_dataset_builder_creates_sensitive_boundary_dataset(tm
         "output_dir": str(output_dir),
         "manifest_path": str(output_dir / "manifest.jsonl"),
         "raw_dir": str(output_dir / "raw"),
-        "case_count": 3,
+        "case_count": 4,
     }
     assert (output_dir / "raw" / "tight_center_boundary.json").exists()
     assert (output_dir / "raw" / "direction_trigger_boundary.json").exists()
+    assert (output_dir / "raw" / "reverse_direction_trigger_boundary.json").exists()
     assert (output_dir / "raw" / "oversize_boundary.json").exists()
 
     manifest_rows = [
@@ -744,6 +745,16 @@ def test_guidance_boundary_dataset_builder_creates_sensitive_boundary_dataset(tm
             "task_type": "view_guidance",
             "expected_action": "left",
             "expected_reason": "target_shifted_right",
+        },
+        {
+            "clip_id": "reverse_direction_trigger_boundary",
+            "raw_payload_path": str(
+                output_dir / "raw" / "reverse_direction_trigger_boundary.json"
+            ),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "right",
+            "expected_reason": "target_shifted_left",
         },
         {
             "clip_id": "oversize_boundary",
@@ -785,6 +796,20 @@ def test_guidance_boundary_dataset_builder_creates_sensitive_boundary_dataset(tm
     assert _run_guidance(direction_trigger, thresholds=earlier_direction) == {
         "action": "left",
         "reason": "target_shifted_right",
+    }
+
+    reverse_direction_trigger = json.loads(
+        (output_dir / "raw" / "reverse_direction_trigger_boundary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert _run_guidance(reverse_direction_trigger, thresholds=baseline) == {
+        "action": "hold_still",
+        "reason": "stabilize_before_capture",
+    }
+    assert _run_guidance(reverse_direction_trigger, thresholds=earlier_direction) == {
+        "action": "right",
+        "reason": "target_shifted_left",
     }
 
     oversize = json.loads(
