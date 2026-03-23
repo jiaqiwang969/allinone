@@ -1,10 +1,20 @@
 import json
 from pathlib import Path
 
+from allinone.application.runtime.build_observation_payload import (
+    build_observation_payload_from_raw,
+)
+from allinone.application.runtime.run_runtime_observation import (
+    run_runtime_observation,
+)
+from allinone.domain.guidance.services import GuidanceThresholds
 from allinone.domain.research.entities import CandidateConfig, ExperimentRun
 from allinone.domain.research.value_objects import ExperimentId, MetricName
 from allinone.infrastructure.research.autoresearch.judge_adapter import (
     AutoresearchJudgeAdapter,
+)
+from allinone.infrastructure.research.autoresearch.guidance_boundary_dataset import (
+    GuidanceBoundaryDatasetBuilder,
 )
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
@@ -69,6 +79,7 @@ def test_run_writer_writes_run_artifacts_and_summary(tmp_path):
             "target_labels": ["meter"],
             "expected_action": "left",
             "guidance_action": "left",
+            "guidance_reason": "target_shifted_right",
             "language_action": "left",
             "action_match": True,
             "target_detected": True,
@@ -122,6 +133,7 @@ def test_run_writer_writes_run_artifacts_and_summary(tmp_path):
             "target_labels": ["meter"],
             "expected_action": "left",
             "guidance_action": "hold_still",
+            "guidance_reason": "fully_centered",
             "language_action": "hold_still",
             "action_match": False,
             "target_detected": False,
@@ -195,6 +207,7 @@ def test_run_writer_writes_run_artifacts_and_summary(tmp_path):
             "target_labels": ["meter"],
             "expected_action": "left",
             "guidance_action": "left",
+            "guidance_reason": "target_shifted_right",
             "language_action": "left",
             "action_match": True,
             "target_detected": True,
@@ -215,6 +228,7 @@ def test_run_writer_writes_run_artifacts_and_summary(tmp_path):
             "target_labels": ["meter"],
             "expected_action": "left",
             "guidance_action": "hold_still",
+            "guidance_reason": "fully_centered",
             "language_action": "hold_still",
             "action_match": False,
             "target_detected": False,
@@ -236,6 +250,193 @@ def test_run_writer_writes_run_artifacts_and_summary(tmp_path):
         "target_detected_rate": 0.5,
         "usable_clip_rate": 0.5,
     }
+
+
+def test_run_writer_includes_reason_match_rate_when_result_rows_have_reason_labels(tmp_path):
+    run_dir = tmp_path / "run-2026-03-23-reason-match"
+    writer = AutoresearchRunWriter(run_dir=run_dir)
+
+    artifacts = writer.write(
+        manifest_rows=[
+            {
+                "clip_id": "clip-101",
+                "raw_payload_path": "raw/clip-101.json",
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "hold_still",
+                "expected_reason": "stabilize_before_capture",
+            },
+            {
+                "clip_id": "clip-102",
+                "raw_payload_path": "raw/clip-102.json",
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "left",
+                "expected_reason": "target_shifted_right",
+            },
+        ],
+        result_rows=[
+            {
+                "clip_id": "clip-101",
+                "candidate_name": "candidate-1",
+                "task_type": "view_guidance",
+                "target_labels": ["meter"],
+                "expected_action": "hold_still",
+                "guidance_action": "hold_still",
+                "guidance_reason": "stabilize_before_capture",
+                "expected_reason": "stabilize_before_capture",
+                "reason_match": True,
+                "language_action": "hold_still",
+                "action_match": True,
+                "target_detected": True,
+                "best_frame_index": 1,
+                "visibility_score": 0.86,
+                "readable_ratio": 0.79,
+                "stability_score": 0.91,
+                "alignment_score": 0.87,
+                "operator_message": "保持稳定",
+                "evidence_focus": "等待清晰抓拍",
+                "language_source": "fake-qwen",
+                "error": None,
+                "raw_payload": {
+                    "detections": {
+                        "prediction_rows": [],
+                        "image_size": [1000, 1000],
+                        "target_labels": ["meter"],
+                        "best_frame_index": 1,
+                    },
+                    "vjepa": {
+                        "visibility_score": 0.86,
+                        "readable_ratio": 0.79,
+                        "stability_score": 0.91,
+                        "alignment_score": 0.87,
+                    },
+                },
+                "payload": {
+                    "prediction_rows": [],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                    "visibility_score": 0.86,
+                    "readable_ratio": 0.79,
+                },
+            },
+            {
+                "clip_id": "clip-102",
+                "candidate_name": "candidate-1",
+                "task_type": "view_guidance",
+                "target_labels": ["meter"],
+                "expected_action": "left",
+                "guidance_action": "left",
+                "guidance_reason": "fully_centered",
+                "expected_reason": "target_shifted_right",
+                "reason_match": False,
+                "language_action": "left",
+                "action_match": True,
+                "target_detected": True,
+                "best_frame_index": 2,
+                "visibility_score": 0.89,
+                "readable_ratio": 0.83,
+                "stability_score": 0.93,
+                "alignment_score": 0.9,
+                "operator_message": "请向左移动",
+                "evidence_focus": "继续稳定画面",
+                "language_source": "fake-qwen",
+                "error": None,
+                "raw_payload": {
+                    "detections": {
+                        "prediction_rows": [],
+                        "image_size": [1000, 1000],
+                        "target_labels": ["meter"],
+                        "best_frame_index": 2,
+                    },
+                    "vjepa": {
+                        "visibility_score": 0.89,
+                        "readable_ratio": 0.83,
+                        "stability_score": 0.93,
+                        "alignment_score": 0.9,
+                    },
+                },
+                "payload": {
+                    "prediction_rows": [],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                    "visibility_score": 0.89,
+                    "readable_ratio": 0.83,
+                },
+            },
+        ],
+        candidate_name="candidate-1",
+    )
+
+    assert artifacts["summary"] == {
+        "candidate_name": "candidate-1",
+        "clip_count": 2,
+        "action_match_rate": 1.0,
+        "target_detected_rate": 1.0,
+        "usable_clip_rate": 1.0,
+        "reason_match_rate": 0.5,
+    }
+    assert json.loads((run_dir / "summary.json").read_text(encoding="utf-8")) == {
+        "candidate_name": "candidate-1",
+        "clip_count": 2,
+        "action_match_rate": 1.0,
+        "target_detected_rate": 1.0,
+        "usable_clip_rate": 1.0,
+        "reason_match_rate": 0.5,
+    }
+
+    written_results = [
+        json.loads(line)
+        for line in (run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert written_results == [
+        {
+            "clip_id": "clip-101",
+            "candidate_name": "candidate-1",
+            "task_type": "view_guidance",
+            "target_labels": ["meter"],
+            "expected_action": "hold_still",
+            "guidance_action": "hold_still",
+            "guidance_reason": "stabilize_before_capture",
+            "expected_reason": "stabilize_before_capture",
+            "reason_match": True,
+            "language_action": "hold_still",
+            "action_match": True,
+            "target_detected": True,
+            "best_frame_index": 1,
+            "visibility_score": 0.86,
+            "readable_ratio": 0.79,
+            "stability_score": 0.91,
+            "alignment_score": 0.87,
+            "operator_message": "保持稳定",
+            "evidence_focus": "等待清晰抓拍",
+            "language_source": "fake-qwen",
+            "error": None,
+        },
+        {
+            "clip_id": "clip-102",
+            "candidate_name": "candidate-1",
+            "task_type": "view_guidance",
+            "target_labels": ["meter"],
+            "expected_action": "left",
+            "guidance_action": "left",
+            "guidance_reason": "fully_centered",
+            "expected_reason": "target_shifted_right",
+            "reason_match": False,
+            "language_action": "left",
+            "action_match": True,
+            "target_detected": True,
+            "best_frame_index": 2,
+            "visibility_score": 0.89,
+            "readable_ratio": 0.83,
+            "stability_score": 0.93,
+            "alignment_score": 0.9,
+            "operator_message": "请向左移动",
+            "evidence_focus": "继续稳定画面",
+            "language_source": "fake-qwen",
+            "error": None,
+        },
+    ]
 
 
 def test_replay_adapter_builds_payload_from_run_directory(tmp_path):
@@ -368,6 +569,71 @@ def test_rule_based_judge_scores_candidate_run_payload(tmp_path):
     }
 
 
+def test_rule_based_judge_uses_reason_match_rate_when_present(tmp_path):
+    run_dir = tmp_path / "run-2026-03-23-reason-aware"
+    run_dir.mkdir(parents=True)
+    results_path = run_dir / "results.jsonl"
+    results_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "clip_id": "clip-101",
+                        "target_detected": True,
+                        "reason_match": True,
+                        "error": None,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "clip_id": "clip-102",
+                        "target_detected": True,
+                        "reason_match": False,
+                        "error": None,
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    payload = {
+        "run_dir": str(run_dir),
+        "candidate_name": "candidate-1",
+        "summary": {
+            "candidate_name": "candidate-1",
+            "clip_count": 2,
+            "action_match_rate": 1.0,
+            "target_detected_rate": 1.0,
+            "usable_clip_rate": 1.0,
+            "reason_match_rate": 0.5,
+        },
+        "results_path": str(results_path),
+        "result_count": 2,
+    }
+
+    judgement = RuleBasedAutoresearchJudge().score_candidate(payload)
+
+    assert judgement == {
+        "candidate_name": "candidate-1",
+        "run_dir": str(run_dir),
+        "score": 0.9,
+        "summary": (
+            "action_match_rate=1.00 target_detected_rate=1.00 "
+            "usable_clip_rate=1.00 reason_match_rate=0.50 "
+            "error_rate=0.00 target_not_detected_ratio=0.00"
+        ),
+        "metrics": {
+            "action_match_rate": 1.0,
+            "target_detected_rate": 1.0,
+            "usable_clip_rate": 1.0,
+            "reason_match_rate": 0.5,
+            "error_rate": 0.0,
+            "target_not_detected_ratio": 0.0,
+            "result_count": 2,
+        },
+    }
+
+
 def test_rule_based_policy_candidate_proposer_generates_baseline_and_mutations():
     candidates = RuleBasedPolicyCandidateProposer().propose_candidates(
         base_thresholds={
@@ -416,3 +682,134 @@ def test_rule_based_policy_candidate_proposer_generates_baseline_and_mutations()
             },
         },
     ]
+
+
+def test_guidance_boundary_dataset_builder_creates_sensitive_boundary_dataset(tmp_path):
+    output_dir = tmp_path / "guidance-boundary"
+    builder = GuidanceBoundaryDatasetBuilder()
+    base_raw_payload = {
+        "detections": {
+            "prediction_rows": [
+                {
+                    "label": "person",
+                    "confidence": 0.97,
+                    "xyxy": [320, 140, 680, 860],
+                }
+            ],
+            "image_size": [1000, 1000],
+            "target_labels": ["person"],
+            "best_frame_index": 2,
+        },
+        "vjepa": {
+            "visibility_score": 0.88,
+            "readable_ratio": 0.81,
+            "stability_score": 0.92,
+            "alignment_score": 0.9,
+        },
+    }
+
+    dataset = builder.build(
+        base_raw_payload=base_raw_payload,
+        output_dir=output_dir,
+        target_label="person",
+    )
+
+    assert dataset == {
+        "output_dir": str(output_dir),
+        "manifest_path": str(output_dir / "manifest.jsonl"),
+        "raw_dir": str(output_dir / "raw"),
+        "case_count": 3,
+    }
+    assert (output_dir / "raw" / "tight_center_boundary.json").exists()
+    assert (output_dir / "raw" / "direction_trigger_boundary.json").exists()
+    assert (output_dir / "raw" / "oversize_boundary.json").exists()
+
+    manifest_rows = [
+        json.loads(line)
+        for line in (output_dir / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert manifest_rows == [
+        {
+            "clip_id": "tight_center_boundary",
+            "raw_payload_path": str(output_dir / "raw" / "tight_center_boundary.json"),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "hold_still",
+            "expected_reason": "stabilize_before_capture",
+        },
+        {
+            "clip_id": "direction_trigger_boundary",
+            "raw_payload_path": str(output_dir / "raw" / "direction_trigger_boundary.json"),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "left",
+            "expected_reason": "target_shifted_right",
+        },
+        {
+            "clip_id": "oversize_boundary",
+            "raw_payload_path": str(output_dir / "raw" / "oversize_boundary.json"),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "hold_still",
+            "expected_reason": "fully_centered",
+        },
+    ]
+
+    baseline = GuidanceThresholds()
+    tighter_center = GuidanceThresholds(centered_offset_max=0.072)
+    earlier_direction = GuidanceThresholds(directional_offset_min=0.153)
+    relaxed_size = GuidanceThresholds(ready_fill_ratio_max=0.8925)
+
+    tight_center = json.loads(
+        (output_dir / "raw" / "tight_center_boundary.json").read_text(encoding="utf-8")
+    )
+    assert tight_center["vjepa"] == base_raw_payload["vjepa"]
+    assert _run_guidance(tight_center, thresholds=baseline) == {
+        "action": "hold_still",
+        "reason": "fully_centered",
+    }
+    assert _run_guidance(tight_center, thresholds=tighter_center) == {
+        "action": "hold_still",
+        "reason": "stabilize_before_capture",
+    }
+
+    direction_trigger = json.loads(
+        (output_dir / "raw" / "direction_trigger_boundary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert _run_guidance(direction_trigger, thresholds=baseline) == {
+        "action": "hold_still",
+        "reason": "stabilize_before_capture",
+    }
+    assert _run_guidance(direction_trigger, thresholds=earlier_direction) == {
+        "action": "left",
+        "reason": "target_shifted_right",
+    }
+
+    oversize = json.loads(
+        (output_dir / "raw" / "oversize_boundary.json").read_text(encoding="utf-8")
+    )
+    assert _run_guidance(oversize, thresholds=baseline) == {
+        "action": "backward",
+        "reason": "target_too_large",
+    }
+    assert _run_guidance(oversize, thresholds=relaxed_size) == {
+        "action": "hold_still",
+        "reason": "fully_centered",
+    }
+
+
+def _run_guidance(
+    raw_payload: dict[str, object],
+    *,
+    thresholds: GuidanceThresholds,
+) -> dict[str, str]:
+    runtime_result = run_runtime_observation(
+        payload=build_observation_payload_from_raw(raw_payload),
+        guidance_thresholds=thresholds,
+    )
+    return {
+        "action": str(runtime_result["guidance_action"]),
+        "reason": str(runtime_result["reason"]),
+    }

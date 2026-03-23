@@ -159,6 +159,7 @@ def test_run_experiment_batch_returns_clip_aggregated_results():
             "target_labels": ["meter"],
             "expected_action": "left",
             "guidance_action": "left",
+            "guidance_reason": "target_shifted_right",
             "language_action": "left",
             "action_match": True,
             "target_detected": True,
@@ -212,6 +213,7 @@ def test_run_experiment_batch_returns_clip_aggregated_results():
             "target_labels": ["meter"],
             "expected_action": "hold_still",
             "guidance_action": "hold_still",
+            "guidance_reason": "fully_centered",
             "language_action": "hold_still",
             "action_match": True,
             "target_detected": False,
@@ -368,6 +370,7 @@ def test_run_experiment_batch_can_replay_rows_from_raw_payload_path(tmp_path):
             "target_labels": ["meter"],
             "expected_action": "hold_still",
             "guidance_action": "hold_still",
+            "guidance_reason": "fully_centered",
             "language_action": "hold_still",
             "action_match": True,
             "target_detected": True,
@@ -430,6 +433,144 @@ def test_run_experiment_batch_can_replay_rows_from_raw_payload_path(tmp_path):
             batch["results"],
             "baseline",
         )
+    ]
+
+
+def test_run_experiment_batch_records_reason_match_when_manifest_provides_expected_reason():
+    from allinone.application.research.run_experiment_batch import (
+        run_experiment_batch,
+    )
+
+    def fake_clip_analyzer(*, clip_path, target_labels):
+        assert clip_path == "/data/clip-003.mp4"
+        assert target_labels == ("meter",)
+        return {
+            "detections": {
+                "prediction_rows": [
+                    {
+                        "label": "meter",
+                        "confidence": 0.93,
+                        "xyxy": [580, 210, 910, 810],
+                    }
+                ],
+                "image_size": [1000, 1000],
+                "target_labels": ["meter"],
+                "best_frame_index": 3,
+            },
+            "vjepa": {
+                "visibility_score": 0.87,
+                "readable_ratio": 0.81,
+                "stability_score": 0.92,
+                "alignment_score": 0.88,
+            },
+        }
+
+    def fake_runtime_runner(*, payload):
+        assert payload == {
+            "prediction_rows": [
+                {
+                    "label": "meter",
+                    "confidence": 0.93,
+                    "xyxy": [580, 210, 910, 810],
+                }
+            ],
+            "image_size": [1000, 1000],
+            "target_labels": ["meter"],
+            "visibility_score": 0.87,
+            "readable_ratio": 0.81,
+        }
+        return {
+            "guidance_action": "hold_still",
+            "reason": "stabilize_before_capture",
+            "language_action": "hold_still",
+            "confidence": 0.9,
+            "operator_message": "保持稳定",
+            "evidence_focus": "等待清晰抓拍",
+            "language_source": "fake-qwen",
+        }
+
+    class FakeRunWriter:
+        def write(self, *, manifest_rows, result_rows, candidate_name):
+            return {
+                "run_dir": "experiments/runs/reason-match-demo",
+                "result_count": len(result_rows),
+            }
+
+    batch = run_experiment_batch(
+        manifest_rows=[
+            {
+                "clip_id": "clip-003",
+                "clip_path": "/data/clip-003.mp4",
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "hold_still",
+                "expected_reason": "stabilize_before_capture",
+                "notes": "中心区域已接近阈值",
+            }
+        ],
+        candidate_name="candidate-1",
+        clip_analyzer=fake_clip_analyzer,
+        runtime_runner=fake_runtime_runner,
+        run_writer=FakeRunWriter(),
+    )
+
+    assert batch["results"] == [
+        {
+            "clip_id": "clip-003",
+            "candidate_name": "candidate-1",
+            "task_type": "view_guidance",
+            "target_labels": ["meter"],
+            "expected_action": "hold_still",
+            "guidance_action": "hold_still",
+            "guidance_reason": "stabilize_before_capture",
+            "expected_reason": "stabilize_before_capture",
+            "reason_match": True,
+            "language_action": "hold_still",
+            "action_match": True,
+            "target_detected": True,
+            "best_frame_index": 3,
+            "visibility_score": 0.87,
+            "readable_ratio": 0.81,
+            "stability_score": 0.92,
+            "alignment_score": 0.88,
+            "operator_message": "保持稳定",
+            "evidence_focus": "等待清晰抓拍",
+            "language_source": "fake-qwen",
+            "error": None,
+            "raw_payload": {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "meter",
+                            "confidence": 0.93,
+                            "xyxy": [580, 210, 910, 810],
+                        }
+                    ],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                    "best_frame_index": 3,
+                },
+                "vjepa": {
+                    "visibility_score": 0.87,
+                    "readable_ratio": 0.81,
+                    "stability_score": 0.92,
+                    "alignment_score": 0.88,
+                },
+            },
+            "payload": {
+                "prediction_rows": [
+                    {
+                        "label": "meter",
+                        "confidence": 0.93,
+                        "xyxy": [580, 210, 910, 810],
+                    }
+                ],
+                "image_size": [1000, 1000],
+                "target_labels": ["meter"],
+                "visibility_score": 0.87,
+                "readable_ratio": 0.81,
+            },
+        }
     ]
 
 

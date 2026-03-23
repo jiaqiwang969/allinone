@@ -18,6 +18,17 @@ Clip-level raw perception payloads can be generated from `YOLO + V-JEPA` with:
 
 `python3 -m allinone.interfaces.cli.main analyze-clip --clip <clip.mp4> --yolo-model <model> --vjepa-repo <repo> --vjepa-checkpoint <ckpt> --targets <label1,label2> --output <raw.json>`
 
+Sensitive guidance replay datasets can be generated from a frozen raw payload with:
+
+`python3 -m allinone.interfaces.cli.main build-guidance-replay-dataset --input-raw <raw.json> --output-dir experiments/generated/person_boundary_replay --target-label <label>`
+
+The command writes:
+
+- `raw/tight_center_boundary.json`
+- `raw/direction_trigger_boundary.json`
+- `raw/oversize_boundary.json`
+- `manifest.jsonl`
+
 Batch replay experiments can be launched with:
 
 `python3 -m allinone.interfaces.cli.main run-experiment --manifest experiments/manifests/m400_phase1_demo.jsonl --run-dir experiments/runs/run-001 --candidate baseline --yolo-model <model> --vjepa-repo <repo> --vjepa-checkpoint <ckpt>`

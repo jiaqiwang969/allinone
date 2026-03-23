@@ -76,7 +76,7 @@ class AutoresearchRunWriter:
         result_rows: list[dict[str, object]],
     ) -> dict[str, object]:
         clip_count = len(result_rows)
-        return {
+        summary = {
             "candidate_name": candidate_name,
             "clip_count": clip_count,
             "action_match_rate": _safe_rate(
@@ -97,6 +97,15 @@ class AutoresearchRunWriter:
                 clip_count,
             ),
         }
+        reason_rows = [
+            row for row in result_rows if row.get("reason_match") is not None
+        ]
+        if reason_rows:
+            summary["reason_match_rate"] = _safe_rate(
+                sum(1 for row in reason_rows if bool(row["reason_match"])),
+                len(reason_rows),
+            )
+        return summary
 
     def _to_public_result_row(self, row: dict[str, object]) -> dict[str, object]:
         return {

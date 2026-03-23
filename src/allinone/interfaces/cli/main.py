@@ -50,6 +50,9 @@ from allinone.infrastructure.research.autoresearch.replay_adapter import (
 from allinone.infrastructure.research.autoresearch.judge_adapter import (
     AutoresearchJudgeAdapter,
 )
+from allinone.infrastructure.research.autoresearch.guidance_boundary_dataset import (
+    GuidanceBoundaryDatasetBuilder,
+)
 from allinone.infrastructure.research.autoresearch.rule_based_judge import (
     RuleBasedAutoresearchJudge,
 )
@@ -89,6 +92,12 @@ def _build_parser() -> argparse.ArgumentParser:
     build_observation_payload = subparsers.add_parser("build-observation-payload")
     build_observation_payload.add_argument("--input", required=True)
     build_observation_payload.add_argument("--output", required=True)
+    build_guidance_replay_dataset = subparsers.add_parser(
+        "build-guidance-replay-dataset"
+    )
+    build_guidance_replay_dataset.add_argument("--input-raw", required=True)
+    build_guidance_replay_dataset.add_argument("--output-dir", required=True)
+    build_guidance_replay_dataset.add_argument("--target-label", required=True)
     subparsers.add_parser("guidance-smoke")
     subparsers.add_parser("language-smoke")
     subparsers.add_parser("research-smoke")
@@ -173,6 +182,25 @@ def _run_build_observation_payload(input_path: str, output_path: str) -> int:
     Path(output_path).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
+    )
+    return 0
+
+
+def _run_build_guidance_replay_dataset(
+    input_raw_path: str,
+    output_dir: str,
+    target_label: str,
+) -> int:
+    raw_payload = json.loads(Path(input_raw_path).read_text(encoding="utf-8"))
+    dataset = GuidanceBoundaryDatasetBuilder().build(
+        base_raw_payload=raw_payload,
+        output_dir=output_dir,
+        target_label=target_label,
+    )
+    print(
+        f"output_dir={dataset['output_dir']} "
+        f"manifest={dataset['manifest_path']} "
+        f"case_count={dataset['case_count']}"
     )
     return 0
 
@@ -542,6 +570,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "build-observation-payload":
         return _run_build_observation_payload(args.input, args.output)
+    if args.command == "build-guidance-replay-dataset":
+        return _run_build_guidance_replay_dataset(
+            input_raw_path=args.input_raw,
+            output_dir=args.output_dir,
+            target_label=args.target_label,
+        )
     if args.command == "guidance-smoke":
         return _run_guidance_smoke()
     if args.command == "language-smoke":

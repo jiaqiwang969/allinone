@@ -669,3 +669,85 @@ def test_run_research_step_command_writes_summary_json(
         },
     }
     assert "best_candidate_name=candidate-1" in captured.out
+
+
+def test_build_guidance_replay_dataset_command_writes_manifest_and_raw_cases(
+    tmp_path, capsys
+):
+    input_raw = tmp_path / "base-raw.json"
+    output_dir = tmp_path / "guidance-replay"
+    input_raw.write_text(
+        json.dumps(
+            {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "person",
+                            "confidence": 0.97,
+                            "xyxy": [320, 140, 680, 860],
+                        }
+                    ],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["person"],
+                    "best_frame_index": 2,
+                },
+                "vjepa": {
+                    "visibility_score": 0.88,
+                    "readable_ratio": 0.81,
+                    "stability_score": 0.92,
+                    "alignment_score": 0.9,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "build-guidance-replay-dataset",
+            "--input-raw",
+            str(input_raw),
+            "--output-dir",
+            str(output_dir),
+            "--target-label",
+            "person",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    manifest_rows = [
+        json.loads(line)
+        for line in (output_dir / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert exit_code == 0
+    assert (output_dir / "raw" / "tight_center_boundary.json").exists()
+    assert (output_dir / "raw" / "direction_trigger_boundary.json").exists()
+    assert (output_dir / "raw" / "oversize_boundary.json").exists()
+    assert manifest_rows == [
+        {
+            "clip_id": "tight_center_boundary",
+            "raw_payload_path": str(output_dir / "raw" / "tight_center_boundary.json"),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "hold_still",
+            "expected_reason": "stabilize_before_capture",
+        },
+        {
+            "clip_id": "direction_trigger_boundary",
+            "raw_payload_path": str(output_dir / "raw" / "direction_trigger_boundary.json"),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "left",
+            "expected_reason": "target_shifted_right",
+        },
+        {
+            "clip_id": "oversize_boundary",
+            "raw_payload_path": str(output_dir / "raw" / "oversize_boundary.json"),
+            "target_labels": ["person"],
+            "task_type": "view_guidance",
+            "expected_action": "hold_still",
+            "expected_reason": "fully_centered",
+        },
+    ]
+    assert f"manifest={output_dir / 'manifest.jsonl'}" in captured.out
+    assert "case_count=3" in captured.out

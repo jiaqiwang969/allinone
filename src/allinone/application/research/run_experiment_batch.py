@@ -103,14 +103,16 @@ def _build_result_row(
     signal = raw_payload["vjepa"]
     prediction_rows = detections["prediction_rows"]
     guidance_action = runtime_result["guidance_action"]
+    guidance_reason = runtime_result.get("reason")
     expected_action = manifest_row.get("expected_action")
-    return {
+    row = {
         "clip_id": manifest_row["clip_id"],
         "candidate_name": candidate_name,
         "task_type": manifest_row["task_type"],
         "target_labels": list(manifest_row["target_labels"]),
         "expected_action": expected_action,
         "guidance_action": guidance_action,
+        "guidance_reason": guidance_reason,
         "language_action": runtime_result["language_action"],
         "action_match": guidance_action == expected_action,
         "target_detected": bool(prediction_rows),
@@ -126,3 +128,8 @@ def _build_result_row(
         "raw_payload": raw_payload,
         "payload": payload,
     }
+    expected_reason = manifest_row.get("expected_reason")
+    if expected_reason is not None:
+        row["expected_reason"] = expected_reason
+        row["reason_match"] = guidance_reason == expected_reason
+    return row
