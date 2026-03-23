@@ -20,6 +20,7 @@ from allinone.application.research.judge_experiment_candidates import (
     judge_experiment_candidates,
 )
 from allinone.application.research.run_experiment_batch import run_experiment_batch
+from allinone.application.research.run_research_step import run_research_step
 from allinone.application.research.register_experiment import register_experiment
 from allinone.application.runtime.ingest_observation_window import (
     ingest_observation_window,
@@ -31,10 +32,14 @@ from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
 from allinone.infrastructure.language.qwen.client import QwenClient
+from allinone.infrastructure.guidance.policy_recipe import RuntimePolicyRecipeStore
 from allinone.infrastructure.perception.video.sampler import ClipFrameSampler
 from allinone.infrastructure.perception.vjepa.encoder import VJEPAEncoderAdapter
 from allinone.infrastructure.perception.yolo.detector import (
     UltralyticsDetectorAdapter,
+)
+from allinone.infrastructure.research.autoresearch.policy_candidate_proposer import (
+    RuleBasedPolicyCandidateProposer,
 )
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
@@ -48,6 +53,7 @@ from allinone.infrastructure.research.autoresearch.rule_based_judge import (
 from allinone.infrastructure.research.autoresearch.run_writer import (
     AutoresearchRunWriter,
 )
+from allinone.domain.guidance.services import GuidanceThresholds
 from allinone.domain.research.services import ExperimentSelectionService
 
 _DEFAULT_LANGUAGE_OUTPUT = """{
@@ -104,6 +110,25 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
     )
     judge_experiment.add_argument("--output", required=True)
+    run_research_step_parser = subparsers.add_parser("run-research-step")
+    run_research_step_parser.add_argument("--experiment-id", required=True)
+    run_research_step_parser.add_argument("--hypothesis", required=True)
+    run_research_step_parser.add_argument("--target-metric", required=True)
+    run_research_step_parser.add_argument("--manifest", required=True)
+    run_research_step_parser.add_argument("--base-policy", required=True)
+    run_research_step_parser.add_argument("--candidate-count", required=True, type=int)
+    run_research_step_parser.add_argument("--run-root", required=True)
+    run_research_step_parser.add_argument("--output", required=True)
+    run_research_step_parser.add_argument("--yolo-model", required=True)
+    run_research_step_parser.add_argument("--vjepa-repo", required=True)
+    run_research_step_parser.add_argument("--vjepa-checkpoint", required=True)
+    run_research_step_parser.add_argument("--device", required=False)
+    run_research_step_parser.add_argument(
+        "--sample-frames",
+        required=False,
+        type=int,
+        default=8,
+    )
     return parser
 
 
@@ -293,6 +318,62 @@ def _run_judge_experiment(
     return 0
 
 
+def _run_research_step(
+    *,
+    experiment_id: str,
+    hypothesis: str,
+    target_metric: str,
+    manifest_path: str,
+    base_policy_path: str,
+    candidate_count: int,
+    run_root: str,
+    output_path: str,
+    yolo_model_path: str,
+    vjepa_repo: str,
+    vjepa_checkpoint: str,
+    device: str | None,
+    sample_frames: int,
+) -> int:
+    result = run_research_step(
+        experiment_id=experiment_id,
+        hypothesis=hypothesis,
+        target_metric=target_metric,
+        manifest_rows=_load_manifest_rows(manifest_path),
+        base_policy_path=base_policy_path,
+        candidate_count=candidate_count,
+        run_root=run_root,
+        policy_store=RuntimePolicyRecipeStore(),
+        candidate_proposer=RuleBasedPolicyCandidateProposer(),
+        candidate_runner=_CliExperimentBatchRunner(
+            yolo_model_path=yolo_model_path,
+            vjepa_repo=vjepa_repo,
+            vjepa_checkpoint=vjepa_checkpoint,
+            device=device,
+            sample_frames=sample_frames,
+        ),
+        judge_usecase=_CliExperimentJudgeUseCase(),
+    )
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    judgement_path = Path(run_root) / "judgement.json"
+    judgement_path.parent.mkdir(parents=True, exist_ok=True)
+    judgement_path.write_text(
+        json.dumps(result["judgement"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(
+        f"output={destination} "
+        f"judgement={judgement_path} "
+        f"best_candidate_name={result['best_candidate_name']} "
+        f"status={result['status']}"
+    )
+    return 0
+
+
 def _build_sample_payload() -> dict[str, object]:
     return {
         "prediction_rows": [
@@ -360,6 +441,78 @@ class _CliRuntimeTextGenerator:
         return _DEFAULT_LANGUAGE_OUTPUT, "mock"
 
 
+class _CliExperimentBatchRunner:
+    def __init__(
+        self,
+        *,
+        yolo_model_path: str,
+        vjepa_repo: str,
+        vjepa_checkpoint: str,
+        device: str | None,
+        sample_frames: int,
+    ) -> None:
+        self.yolo_model_path = yolo_model_path
+        self.vjepa_repo = vjepa_repo
+        self.vjepa_checkpoint = vjepa_checkpoint
+        self.device = device
+        self.sample_frames = sample_frames
+
+    def run(
+        self,
+        *,
+        manifest_rows: list[dict[str, object]],
+        candidate_name: str,
+        run_dir: str,
+        guidance_thresholds: GuidanceThresholds,
+        policy_path: str,
+    ) -> dict[str, object]:
+        return run_experiment_batch(
+            manifest_rows=manifest_rows,
+            candidate_name=candidate_name,
+            clip_analyzer=lambda *, clip_path, target_labels: build_raw_perception_payload_from_clip(
+                clip_path=clip_path,
+                target_labels=target_labels,
+                sampler=ClipFrameSampler(frame_count=self.sample_frames),
+                detector=UltralyticsDetectorAdapter(
+                    model_path=self.yolo_model_path,
+                    device=self.device,
+                ),
+                clip_scorer=VJEPAEncoderAdapter(
+                    repo_path=self.vjepa_repo,
+                    checkpoint_path=self.vjepa_checkpoint,
+                    device=self.device,
+                ),
+            ),
+            runtime_runner=lambda *, payload: run_runtime_observation_usecase(
+                payload=payload,
+                guidance_thresholds=guidance_thresholds,
+                text_generator=_CliRuntimeTextGenerator(),
+            ),
+            run_writer=AutoresearchRunWriter(run_dir=run_dir),
+        )
+
+
+class _CliExperimentJudgeUseCase:
+    def __call__(
+        self,
+        *,
+        experiment_id: str,
+        hypothesis: str,
+        target_metric: str,
+        candidate_runs: list[dict[str, str]],
+    ) -> dict[str, object]:
+        return judge_experiment_candidates(
+            experiment_id=experiment_id,
+            hypothesis=hypothesis,
+            target_metric=target_metric,
+            candidate_runs=candidate_runs,
+            replay_adapter=AutoresearchReplayAdapter(),
+            candidate_judge=RuleBasedAutoresearchJudge(),
+            judge_adapter=AutoresearchJudgeAdapter(),
+            selection_service=ExperimentSelectionService(),
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the allinone CLI."""
     args = _build_parser().parse_args(argv)
@@ -408,6 +561,22 @@ def main(argv: list[str] | None = None) -> int:
             target_metric=args.target_metric,
             candidate_run_values=args.candidate_run,
             output_path=args.output,
+        )
+    if args.command == "run-research-step":
+        return _run_research_step(
+            experiment_id=args.experiment_id,
+            hypothesis=args.hypothesis,
+            target_metric=args.target_metric,
+            manifest_path=args.manifest,
+            base_policy_path=args.base_policy,
+            candidate_count=args.candidate_count,
+            run_root=args.run_root,
+            output_path=args.output,
+            yolo_model_path=args.yolo_model,
+            vjepa_repo=args.vjepa_repo,
+            vjepa_checkpoint=args.vjepa_checkpoint,
+            device=args.device,
+            sample_frames=args.sample_frames,
         )
     if args.command == "research-smoke":
         return _run_research_smoke()

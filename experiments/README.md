@@ -41,3 +41,14 @@ The judgement output contains:
 - `status`
 - `candidate_scores`
 - `best_candidate_name`
+
+One-step runtime policy search can be launched with:
+
+`python3 -m allinone.interfaces.cli.main run-research-step --experiment-id exp-loop-001 --hypothesis "tighten guidance thresholds" --target-metric guidance_success_rate --manifest experiments/manifests/m400_phase1_demo.jsonl --base-policy configs/runtime_policies/m400_default.json --candidate-count 3 --run-root experiments/research/exp-loop-001 --output experiments/research/exp-loop-001/summary.json --yolo-model <model> --vjepa-repo <repo> --vjepa-checkpoint <ckpt>`
+
+The command writes:
+
+- `candidate_policies/*.json`
+- `runs/<candidate>/...`
+- `judgement.json`
+- `summary.json`

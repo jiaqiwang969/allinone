@@ -428,3 +428,134 @@ def test_judge_experiment_command_writes_judgement_json(
         "best_candidate_name": "candidate-a",
     }
     assert "best_candidate_name=candidate-a" in captured.out
+
+
+def test_run_research_step_command_writes_summary_json(
+    tmp_path, monkeypatch, capsys
+):
+    manifest = tmp_path / "manifest.jsonl"
+    output = tmp_path / "research" / "summary.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "clip_id": "clip-001",
+                "clip_path": "/data/clip-001.mp4",
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "left",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_research_step(**kwargs):
+        assert kwargs["experiment_id"] == "exp-loop-001"
+        assert kwargs["hypothesis"] == "tighten guidance thresholds"
+        assert kwargs["target_metric"] == "guidance_success_rate"
+        assert kwargs["candidate_count"] == 2
+        assert kwargs["base_policy_path"] == "configs/runtime_policies/m400_default.json"
+        assert kwargs["run_root"] == "experiments/research/exp-loop-001"
+        assert kwargs["manifest_rows"] == [
+            {
+                "clip_id": "clip-001",
+                "clip_path": "/data/clip-001.mp4",
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "left",
+            }
+        ]
+        return {
+            "experiment_id": "exp-loop-001",
+            "target_metric": "guidance_success_rate",
+            "status": "completed",
+            "candidate_count": 2,
+            "candidate_policies": [
+                {
+                    "candidate_name": "baseline",
+                    "mutation": "baseline",
+                    "policy_path": "experiments/research/exp-loop-001/candidate_policies/baseline.json",
+                    "run_dir": "experiments/research/exp-loop-001/runs/baseline",
+                },
+                {
+                    "candidate_name": "candidate-1",
+                    "mutation": "tighten_center_window",
+                    "policy_path": "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+                    "run_dir": "experiments/research/exp-loop-001/runs/candidate-1",
+                },
+            ],
+            "best_candidate_name": "candidate-1",
+            "best_policy_path": "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+            "judgement": {
+                "experiment_id": "exp-loop-001",
+                "target_metric": "guidance_success_rate",
+                "status": "completed",
+                "candidate_scores": [],
+                "best_candidate_name": "candidate-1",
+            },
+        }
+
+    monkeypatch.setattr(
+        "allinone.interfaces.cli.main.run_research_step",
+        fake_run_research_step,
+    )
+
+    exit_code = main(
+        [
+            "run-research-step",
+            "--experiment-id",
+            "exp-loop-001",
+            "--hypothesis",
+            "tighten guidance thresholds",
+            "--target-metric",
+            "guidance_success_rate",
+            "--manifest",
+            str(manifest),
+            "--base-policy",
+            "configs/runtime_policies/m400_default.json",
+            "--candidate-count",
+            "2",
+            "--run-root",
+            "experiments/research/exp-loop-001",
+            "--output",
+            str(output),
+            "--yolo-model",
+            "mock-yolo.pt",
+            "--vjepa-repo",
+            "/models/vjepa2",
+            "--vjepa-checkpoint",
+            "/models/vjepa2/model.pt",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "experiment_id": "exp-loop-001",
+        "target_metric": "guidance_success_rate",
+        "status": "completed",
+        "candidate_count": 2,
+        "candidate_policies": [
+            {
+                "candidate_name": "baseline",
+                "mutation": "baseline",
+                "policy_path": "experiments/research/exp-loop-001/candidate_policies/baseline.json",
+                "run_dir": "experiments/research/exp-loop-001/runs/baseline",
+            },
+            {
+                "candidate_name": "candidate-1",
+                "mutation": "tighten_center_window",
+                "policy_path": "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+                "run_dir": "experiments/research/exp-loop-001/runs/candidate-1",
+            },
+        ],
+        "best_candidate_name": "candidate-1",
+        "best_policy_path": "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+        "judgement": {
+            "experiment_id": "exp-loop-001",
+            "target_metric": "guidance_success_rate",
+            "status": "completed",
+            "candidate_scores": [],
+            "best_candidate_name": "candidate-1",
+        },
+    }
+    assert "best_candidate_name=candidate-1" in captured.out

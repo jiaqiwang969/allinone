@@ -1,3 +1,5 @@
+import json
+
 from PIL import Image
 
 from allinone.application.runtime.build_clip_perception_payload import (
@@ -10,6 +12,9 @@ from allinone.application.runtime.build_observation_payload import (
     build_observation_payload,
 )
 from allinone.application.runtime.capture_evidence import capture_evidence
+from allinone.application.runtime.run_runtime_observation import (
+    run_runtime_observation,
+)
 from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
@@ -17,8 +22,10 @@ from allinone.application.session.open_session import open_session
 from allinone.domain.evidence.entities import EvidenceBundle, EvidenceItem
 from allinone.domain.evidence.policies import EvidenceRequirementPolicy
 from allinone.domain.guidance.entities import GuidanceDecision
+from allinone.domain.guidance.services import GuidanceThresholds
 from allinone.domain.perception.entities import PerceptionObservation
 from allinone.domain.session.entities import WorkSession
+from allinone.infrastructure.guidance.policy_recipe import RuntimePolicyRecipeStore
 from allinone.domain.shared.value_objects import BoundingBox, CenterOffset, SessionId, StageType
 from allinone.infrastructure.perception.video.sampler import SampledClip
 from allinone.infrastructure.perception.vjepa.encoder import ClipQualitySignal
@@ -46,6 +53,69 @@ def test_request_guidance_decision_usecase_returns_domain_decision():
 
     assert isinstance(decision, GuidanceDecision)
     assert decision.action.value == "left"
+
+
+def test_request_guidance_decision_can_use_custom_thresholds():
+    observation = PerceptionObservation(
+        visibility_score=0.7,
+        readable_ratio=0.8,
+        fill_ratio=0.5,
+        center_offset=CenterOffset(dx=0.25, dy=0.0),
+        roi=BoundingBox(x1=0.1, y1=0.1, x2=0.9, y2=0.9),
+    )
+
+    decision = request_guidance_decision(
+        observation,
+        guidance_thresholds=GuidanceThresholds(directional_offset_min=0.3),
+    )
+
+    assert isinstance(decision, GuidanceDecision)
+    assert decision.action.value == "hold_still"
+
+
+def test_runtime_observation_can_load_guidance_thresholds_from_policy_recipe(tmp_path):
+    class FakeTextGenerator:
+        def generate(self, prompt: str):
+            assert "suggested_action=hold_still" in prompt
+            return (
+                '{"operator_message":"保持稳定","suggested_action":"hold_still","confidence":0.61,"evidence_focus":"保持目标稳定"}',
+                "fake-qwen",
+            )
+
+    recipe_path = tmp_path / "policy.json"
+    recipe_path.write_text(
+        json.dumps(
+            {
+                "guidance_thresholds": {
+                    "centered_offset_max": 0.09,
+                    "directional_offset_min": 0.3,
+                    "ready_fill_ratio_max": 0.85,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    thresholds = RuntimePolicyRecipeStore().load_guidance_thresholds(recipe_path)
+
+    result = run_runtime_observation(
+        payload={
+            "prediction_rows": [
+                {
+                    "label": "meter",
+                    "confidence": 0.91,
+                    "xyxy": [600, 200, 900, 800],
+                }
+            ],
+            "image_size": [1000, 1000],
+            "target_labels": ["meter"],
+            "visibility_score": 0.7,
+            "readable_ratio": 0.8,
+        },
+        guidance_thresholds=thresholds,
+        text_generator=FakeTextGenerator(),
+    )
+
+    assert result["guidance_action"] == "hold_still"
 
 
 def test_capture_evidence_usecase_adds_item_and_assesses_bundle():

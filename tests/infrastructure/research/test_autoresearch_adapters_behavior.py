@@ -12,6 +12,9 @@ from allinone.infrastructure.research.autoresearch.replay_adapter import (
 from allinone.infrastructure.research.autoresearch.rule_based_judge import (
     RuleBasedAutoresearchJudge,
 )
+from allinone.infrastructure.research.autoresearch.policy_candidate_proposer import (
+    RuleBasedPolicyCandidateProposer,
+)
 from allinone.infrastructure.research.autoresearch.run_writer import (
     AutoresearchRunWriter,
 )
@@ -363,3 +366,53 @@ def test_rule_based_judge_scores_candidate_run_payload(tmp_path):
             "result_count": 4,
         },
     }
+
+
+def test_rule_based_policy_candidate_proposer_generates_baseline_and_mutations():
+    candidates = RuleBasedPolicyCandidateProposer().propose_candidates(
+        base_thresholds={
+            "centered_offset_max": 0.09,
+            "directional_offset_min": 0.18,
+            "ready_fill_ratio_max": 0.85,
+        },
+        candidate_count=4,
+    )
+
+    assert candidates == [
+        {
+            "candidate_name": "baseline",
+            "mutation": "baseline",
+            "guidance_thresholds": {
+                "centered_offset_max": 0.09,
+                "directional_offset_min": 0.18,
+                "ready_fill_ratio_max": 0.85,
+            },
+        },
+        {
+            "candidate_name": "candidate-1",
+            "mutation": "tighten_center_window",
+            "guidance_thresholds": {
+                "centered_offset_max": 0.072,
+                "directional_offset_min": 0.18,
+                "ready_fill_ratio_max": 0.85,
+            },
+        },
+        {
+            "candidate_name": "candidate-2",
+            "mutation": "earlier_direction_trigger",
+            "guidance_thresholds": {
+                "centered_offset_max": 0.09,
+                "directional_offset_min": 0.153,
+                "ready_fill_ratio_max": 0.85,
+            },
+        },
+        {
+            "candidate_name": "candidate-3",
+            "mutation": "allow_larger_target_before_backward",
+            "guidance_thresholds": {
+                "centered_offset_max": 0.09,
+                "directional_offset_min": 0.18,
+                "ready_fill_ratio_max": 0.8925,
+            },
+        },
+    ]

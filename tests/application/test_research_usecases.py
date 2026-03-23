@@ -1,6 +1,7 @@
 from allinone.application.research.register_experiment import register_experiment
 from allinone.domain.research.entities import CandidateEvaluation, ExperimentRun
 from allinone.domain.research.services import ExperimentSelectionService
+from allinone.domain.guidance.services import GuidanceThresholds
 
 
 def test_register_experiment_usecase_returns_registered_run():
@@ -361,4 +362,246 @@ def test_judge_experiment_candidates_returns_best_candidate_summary():
             },
         ],
         "best_candidate_name": "candidate-a",
+    }
+
+
+def test_run_research_step_materializes_candidates_runs_and_selects_best():
+    from allinone.application.research.run_research_step import run_research_step
+
+    write_calls = []
+    runner_calls = []
+    judge_calls = []
+
+    class FakePolicyStore:
+        def load_guidance_thresholds(self, recipe_path):
+            assert recipe_path == "configs/runtime_policies/m400_default.json"
+            return GuidanceThresholds(
+                centered_offset_max=0.09,
+                directional_offset_min=0.18,
+                ready_fill_ratio_max=0.85,
+            )
+
+        def write_guidance_thresholds(self, *, recipe_path, thresholds):
+            write_calls.append((str(recipe_path), thresholds))
+            return recipe_path
+
+    class FakeCandidateProposer:
+        def propose_candidates(self, *, base_thresholds, candidate_count):
+            assert base_thresholds == {
+                "centered_offset_max": 0.09,
+                "directional_offset_min": 0.18,
+                "ready_fill_ratio_max": 0.85,
+            }
+            assert candidate_count == 2
+            return [
+                {
+                    "candidate_name": "baseline",
+                    "mutation": "baseline",
+                    "guidance_thresholds": {
+                        "centered_offset_max": 0.09,
+                        "directional_offset_min": 0.18,
+                        "ready_fill_ratio_max": 0.85,
+                    },
+                },
+                {
+                    "candidate_name": "candidate-1",
+                    "mutation": "tighten_center_window",
+                    "guidance_thresholds": {
+                        "centered_offset_max": 0.072,
+                        "directional_offset_min": 0.18,
+                        "ready_fill_ratio_max": 0.85,
+                    },
+                },
+            ]
+
+    class FakeCandidateRunner:
+        def run(
+            self,
+            *,
+            manifest_rows,
+            candidate_name,
+            run_dir,
+            guidance_thresholds,
+            policy_path,
+        ):
+            runner_calls.append(
+                (
+                    manifest_rows,
+                    candidate_name,
+                    run_dir,
+                    guidance_thresholds,
+                    policy_path,
+                )
+            )
+            return {
+                "candidate_name": candidate_name,
+                "run_dir": run_dir,
+            }
+
+    class FakeJudgeUseCase:
+        def __call__(self, **kwargs):
+            judge_calls.append(kwargs)
+            return {
+                "experiment_id": "exp-loop-001",
+                "target_metric": "guidance_success_rate",
+                "status": "completed",
+                "candidate_scores": [
+                    {
+                        "candidate_name": "baseline",
+                        "run_dir": "experiments/research/exp-loop-001/runs/baseline",
+                        "score": 0.52,
+                        "summary": "baseline summary",
+                        "metrics": {"action_match_rate": 0.6},
+                    },
+                    {
+                        "candidate_name": "candidate-1",
+                        "run_dir": "experiments/research/exp-loop-001/runs/candidate-1",
+                        "score": 0.81,
+                        "summary": "candidate summary",
+                        "metrics": {"action_match_rate": 0.8},
+                    },
+                ],
+                "best_candidate_name": "candidate-1",
+            }
+
+    result = run_research_step(
+        experiment_id="exp-loop-001",
+        hypothesis="tighten guidance thresholds",
+        target_metric="guidance_success_rate",
+        manifest_rows=[
+            {
+                "clip_id": "clip-001",
+                "clip_path": "/data/clip-001.mp4",
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "left",
+            }
+        ],
+        base_policy_path="configs/runtime_policies/m400_default.json",
+        candidate_count=2,
+        run_root="experiments/research/exp-loop-001",
+        policy_store=FakePolicyStore(),
+        candidate_proposer=FakeCandidateProposer(),
+        candidate_runner=FakeCandidateRunner(),
+        judge_usecase=FakeJudgeUseCase(),
+    )
+
+    assert write_calls == [
+        (
+            "experiments/research/exp-loop-001/candidate_policies/baseline.json",
+            GuidanceThresholds(
+                centered_offset_max=0.09,
+                directional_offset_min=0.18,
+                ready_fill_ratio_max=0.85,
+            ),
+        ),
+        (
+            "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+            GuidanceThresholds(
+                centered_offset_max=0.072,
+                directional_offset_min=0.18,
+                ready_fill_ratio_max=0.85,
+            ),
+        ),
+    ]
+    assert runner_calls == [
+        (
+            [
+                {
+                    "clip_id": "clip-001",
+                    "clip_path": "/data/clip-001.mp4",
+                    "target_labels": ["meter"],
+                    "task_type": "view_guidance",
+                    "expected_action": "left",
+                }
+            ],
+            "baseline",
+            "experiments/research/exp-loop-001/runs/baseline",
+            GuidanceThresholds(
+                centered_offset_max=0.09,
+                directional_offset_min=0.18,
+                ready_fill_ratio_max=0.85,
+            ),
+            "experiments/research/exp-loop-001/candidate_policies/baseline.json",
+        ),
+        (
+            [
+                {
+                    "clip_id": "clip-001",
+                    "clip_path": "/data/clip-001.mp4",
+                    "target_labels": ["meter"],
+                    "task_type": "view_guidance",
+                    "expected_action": "left",
+                }
+            ],
+            "candidate-1",
+            "experiments/research/exp-loop-001/runs/candidate-1",
+            GuidanceThresholds(
+                centered_offset_max=0.072,
+                directional_offset_min=0.18,
+                ready_fill_ratio_max=0.85,
+            ),
+            "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+        ),
+    ]
+    assert judge_calls == [
+        {
+            "experiment_id": "exp-loop-001",
+            "hypothesis": "tighten guidance thresholds",
+            "target_metric": "guidance_success_rate",
+            "candidate_runs": [
+                {
+                    "candidate_name": "baseline",
+                    "run_dir": "experiments/research/exp-loop-001/runs/baseline",
+                },
+                {
+                    "candidate_name": "candidate-1",
+                    "run_dir": "experiments/research/exp-loop-001/runs/candidate-1",
+                },
+            ],
+        }
+    ]
+    assert result == {
+        "experiment_id": "exp-loop-001",
+        "target_metric": "guidance_success_rate",
+        "status": "completed",
+        "candidate_count": 2,
+        "candidate_policies": [
+            {
+                "candidate_name": "baseline",
+                "mutation": "baseline",
+                "policy_path": "experiments/research/exp-loop-001/candidate_policies/baseline.json",
+                "run_dir": "experiments/research/exp-loop-001/runs/baseline",
+            },
+            {
+                "candidate_name": "candidate-1",
+                "mutation": "tighten_center_window",
+                "policy_path": "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+                "run_dir": "experiments/research/exp-loop-001/runs/candidate-1",
+            },
+        ],
+        "best_candidate_name": "candidate-1",
+        "best_policy_path": "experiments/research/exp-loop-001/candidate_policies/candidate-1.json",
+        "judgement": {
+            "experiment_id": "exp-loop-001",
+            "target_metric": "guidance_success_rate",
+            "status": "completed",
+            "candidate_scores": [
+                {
+                    "candidate_name": "baseline",
+                    "run_dir": "experiments/research/exp-loop-001/runs/baseline",
+                    "score": 0.52,
+                    "summary": "baseline summary",
+                    "metrics": {"action_match_rate": 0.6},
+                },
+                {
+                    "candidate_name": "candidate-1",
+                    "run_dir": "experiments/research/exp-loop-001/runs/candidate-1",
+                    "score": 0.81,
+                    "summary": "candidate summary",
+                    "metrics": {"action_match_rate": 0.8},
+                },
+            ],
+            "best_candidate_name": "candidate-1",
+        },
     }

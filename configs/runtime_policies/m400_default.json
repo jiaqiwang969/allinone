@@ -1,0 +1,7 @@
+{
+  "guidance_thresholds": {
+    "centered_offset_max": 0.09,
+    "directional_offset_min": 0.18,
+    "ready_fill_ratio_max": 0.85
+  }
+}

@@ -12,6 +12,7 @@ from allinone.application.runtime.ingest_observation_window import (
 from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
+from allinone.domain.guidance.services import GuidanceThresholds
 from allinone.infrastructure.language.qwen.client import QwenClient
 from allinone.infrastructure.language.qwen.prompt_builder import QwenPromptBuilder
 from allinone.infrastructure.language.qwen.structured_output import (
@@ -50,6 +51,7 @@ class QwenRuntimeTextGenerator:
 def run_runtime_observation(
     *,
     payload: dict[str, object],
+    guidance_thresholds: GuidanceThresholds | None = None,
     prompt_builder: QwenPromptBuilder | None = None,
     output_parser: QwenStructuredOutputParser | None = None,
     text_generator: RuntimeTextGenerator | None = None,
@@ -63,7 +65,10 @@ def run_runtime_observation(
         visibility_score=float(payload["visibility_score"]),
         readable_ratio=float(payload["readable_ratio"]),
     )
-    decision = request_guidance_decision(observation)
+    decision = request_guidance_decision(
+        observation,
+        guidance_thresholds=guidance_thresholds,
+    )
     prompt = (prompt_builder or QwenPromptBuilder()).build_guidance_explanation_prompt(
         observation=observation,
         decision=decision,
