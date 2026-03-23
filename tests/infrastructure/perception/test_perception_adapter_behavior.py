@@ -47,3 +47,17 @@ def test_observation_builder_converts_detection_to_perception_observation():
     assert observation.fill_ratio == pytest.approx(0.18)
     assert observation.center_offset.dx == pytest.approx(0.25)
     assert observation.center_offset.dy == pytest.approx(0.0)
+
+
+def test_detection_candidate_exports_prediction_row():
+    row = DetectionCandidate(
+        label="meter",
+        confidence=0.91,
+        bbox=BoundingBox(x1=0.6, y1=0.2, x2=0.9, y2=0.8),
+    ).to_prediction_row(image_size=(1000, 1000))
+
+    assert row == {
+        "label": "meter",
+        "confidence": 0.91,
+        "xyxy": [600.0, 200.0, 900.0, 800.0],
+    }

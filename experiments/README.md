@@ -8,3 +8,8 @@ Sample runtime payloads live under `experiments/samples/` and can be passed to
 
 Raw upstream perception examples also live under `experiments/samples/` and can
 be converted with `python3 -m allinone.interfaces.cli.main build-observation-payload`.
+
+Single-image raw perception payloads can also be generated from live YOLO
+inference with:
+
+`python3 -m allinone.interfaces.cli.main detect-image --image <image> --model <model> --targets <label1,label2> --output <raw.json>`

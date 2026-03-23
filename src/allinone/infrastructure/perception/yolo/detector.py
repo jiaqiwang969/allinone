@@ -13,6 +13,19 @@ class DetectionCandidate:
     confidence: float
     bbox: BoundingBox
 
+    def to_prediction_row(self, *, image_size: tuple[int, int]) -> dict[str, object]:
+        width, height = image_size
+        return {
+            "label": self.label,
+            "confidence": self.confidence,
+            "xyxy": [
+                self.bbox.x1 * width,
+                self.bbox.y1 * height,
+                self.bbox.x2 * width,
+                self.bbox.y2 * height,
+            ],
+        }
+
 
 class UltralyticsDetectorAdapter:
     """Normalize upstream Ultralytics results into project-facing detections."""

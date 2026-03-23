@@ -7,6 +7,9 @@ import json
 import os
 from pathlib import Path
 
+from allinone.application.runtime.build_raw_perception_payload import (
+    build_raw_perception_payload_from_image,
+)
 from allinone.application.runtime.build_observation_payload import (
     build_observation_payload_from_raw,
 )
@@ -38,6 +41,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="allinone")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True
+    detect_image = subparsers.add_parser("detect-image")
+    detect_image.add_argument("--image", required=True)
+    detect_image.add_argument("--model", required=True)
+    detect_image.add_argument("--targets", required=True)
+    detect_image.add_argument("--output", required=True)
+    detect_image.add_argument("--device", required=False)
     build_observation_payload = subparsers.add_parser("build-observation-payload")
     build_observation_payload.add_argument("--input", required=True)
     build_observation_payload.add_argument("--output", required=True)
@@ -86,6 +95,28 @@ def _run_build_observation_payload(input_path: str, output_path: str) -> int:
     payload = build_observation_payload_from_raw(raw_payload)
     Path(output_path).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return 0
+
+
+def _run_detect_image(
+    image_path: str,
+    model_path: str,
+    targets: str,
+    output_path: str,
+    device: str | None,
+) -> int:
+    raw_payload = build_raw_perception_payload_from_image(
+        image_path=image_path,
+        target_labels=tuple(
+            item.strip() for item in targets.split(",") if item.strip()
+        ),
+        model_path=model_path,
+        device=device,
+    )
+    Path(output_path).write_text(
+        json.dumps(raw_payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return 0
@@ -165,6 +196,14 @@ def _generate_language_explanation(prompt: str):
 def main(argv: list[str] | None = None) -> int:
     """Run the allinone CLI."""
     args = _build_parser().parse_args(argv)
+    if args.command == "detect-image":
+        return _run_detect_image(
+            image_path=args.image,
+            model_path=args.model,
+            targets=args.targets,
+            output_path=args.output,
+            device=args.device,
+        )
     if args.command == "build-observation-payload":
         return _run_build_observation_payload(args.input, args.output)
     if args.command == "guidance-smoke":
