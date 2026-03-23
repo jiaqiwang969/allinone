@@ -1,0 +1,8 @@
+mode: auto
+service_url: http://127.0.0.1:8001
+service_timeout_seconds: 30
+model_id: Qwen/Qwen3.5-9B
+runtime_path: /media/dell/eef6db82-afa8-4850-96b0-fdad3cf7025d/models/qwen/Qwen3.5-9B
+device: auto
+max_new_tokens: 256
+temperature: 0.2
