@@ -34,3 +34,4 @@ hf_cache/
 results/
 outputs/
 tmp/
+.worktrees/
