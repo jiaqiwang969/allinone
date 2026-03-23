@@ -13,6 +13,7 @@ def test_application_usecase_modules_exist():
         "allinone.application.session.open_session",
         "allinone.application.research.register_experiment",
         "allinone.application.research.run_experiment_batch",
+        "allinone.application.research.judge_experiment_candidates",
     ]
     for module_name in modules:
         module = import_module(module_name)

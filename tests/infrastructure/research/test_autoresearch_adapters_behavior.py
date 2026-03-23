@@ -9,6 +9,9 @@ from allinone.infrastructure.research.autoresearch.judge_adapter import (
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
 )
+from allinone.infrastructure.research.autoresearch.rule_based_judge import (
+    RuleBasedAutoresearchJudge,
+)
 from allinone.infrastructure.research.autoresearch.run_writer import (
     AutoresearchRunWriter,
 )
@@ -271,6 +274,7 @@ def test_replay_adapter_builds_payload_from_run_directory(tmp_path):
             "target_detected_rate": 0.5,
             "usable_clip_rate": 0.5,
         },
+        "results_path": str(run_dir / "results.jsonl"),
         "result_count": 2,
     }
 
@@ -284,3 +288,78 @@ def test_judge_adapter_converts_score_row_to_domain_evaluation():
 
     assert evaluation.candidate_name == "candidate-a"
     assert evaluation.score == 0.81
+
+
+def test_rule_based_judge_scores_candidate_run_payload(tmp_path):
+    run_dir = tmp_path / "run-2026-03-23-baseline"
+    run_dir.mkdir(parents=True)
+    results_path = run_dir / "results.jsonl"
+    results_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "clip_id": "clip-001",
+                        "target_detected": True,
+                        "error": None,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "clip_id": "clip-002",
+                        "target_detected": False,
+                        "error": None,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "clip_id": "clip-003",
+                        "target_detected": False,
+                        "error": "runtime_error",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "clip_id": "clip-004",
+                        "target_detected": True,
+                        "error": None,
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    payload = {
+        "run_dir": str(run_dir),
+        "candidate_name": "baseline",
+        "summary": {
+            "candidate_name": "baseline",
+            "clip_count": 4,
+            "action_match_rate": 0.75,
+            "target_detected_rate": 0.5,
+            "usable_clip_rate": 0.5,
+        },
+        "results_path": str(results_path),
+        "result_count": 4,
+    }
+
+    judgement = RuleBasedAutoresearchJudge().score_candidate(payload)
+
+    assert judgement == {
+        "candidate_name": "baseline",
+        "run_dir": str(run_dir),
+        "score": 0.575,
+        "summary": (
+            "action_match_rate=0.75 target_detected_rate=0.50 "
+            "usable_clip_rate=0.50 error_rate=0.25 "
+            "target_not_detected_ratio=0.50"
+        ),
+        "metrics": {
+            "action_match_rate": 0.75,
+            "target_detected_rate": 0.5,
+            "usable_clip_rate": 0.5,
+            "error_rate": 0.25,
+            "target_not_detected_ratio": 0.5,
+            "result_count": 4,
+        },
+    }

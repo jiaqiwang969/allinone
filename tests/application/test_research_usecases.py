@@ -1,5 +1,6 @@
 from allinone.application.research.register_experiment import register_experiment
-from allinone.domain.research.entities import ExperimentRun
+from allinone.domain.research.entities import CandidateEvaluation, ExperimentRun
+from allinone.domain.research.services import ExperimentSelectionService
 
 
 def test_register_experiment_usecase_returns_registered_run():
@@ -254,3 +255,110 @@ def test_run_experiment_batch_returns_clip_aggregated_results():
             "baseline",
         )
     ]
+
+
+def test_judge_experiment_candidates_returns_best_candidate_summary():
+    from allinone.application.research.judge_experiment_candidates import (
+        judge_experiment_candidates,
+    )
+
+    replay_calls = []
+    judge_calls = []
+    adapter_calls = []
+
+    class FakeReplayAdapter:
+        def build_run_payload(self, run_dir):
+            replay_calls.append(run_dir)
+            candidate_name = "baseline" if run_dir.endswith("baseline") else "candidate-a"
+            return {
+                "run_dir": run_dir,
+                "candidate_name": candidate_name,
+                "summary": {
+                    "candidate_name": candidate_name,
+                    "action_match_rate": 0.6 if candidate_name == "baseline" else 0.8,
+                    "target_detected_rate": 0.5 if candidate_name == "baseline" else 0.9,
+                    "usable_clip_rate": 0.4 if candidate_name == "baseline" else 0.7,
+                },
+                "results_path": f"{run_dir}/results.jsonl",
+                "result_count": 4,
+            }
+
+    class FakeRuleJudge:
+        def score_candidate(self, run_payload):
+            judge_calls.append(run_payload["candidate_name"])
+            if run_payload["candidate_name"] == "baseline":
+                return {
+                    "candidate_name": "baseline",
+                    "run_dir": run_payload["run_dir"],
+                    "score": 0.52,
+                    "summary": "baseline summary",
+                    "metrics": {"action_match_rate": 0.6},
+                }
+            return {
+                "candidate_name": "candidate-a",
+                "run_dir": run_payload["run_dir"],
+                "score": 0.81,
+                "summary": "candidate-a summary",
+                "metrics": {"action_match_rate": 0.8},
+            }
+
+    class FakeJudgeAdapter:
+        def to_candidate_evaluation(self, *, candidate_name, score, summary):
+            adapter_calls.append((candidate_name, score, summary))
+            return CandidateEvaluation(
+                candidate_name=candidate_name,
+                score=score,
+                summary=summary,
+            )
+
+    judgement = judge_experiment_candidates(
+        experiment_id="exp-judge-001",
+        hypothesis="candidate-a should improve guidance stability",
+        target_metric="guidance_success_rate",
+        candidate_runs=[
+            {
+                "candidate_name": "baseline",
+                "run_dir": "experiments/runs/baseline",
+            },
+            {
+                "candidate_name": "candidate-a",
+                "run_dir": "experiments/runs/candidate-a",
+            },
+        ],
+        replay_adapter=FakeReplayAdapter(),
+        candidate_judge=FakeRuleJudge(),
+        judge_adapter=FakeJudgeAdapter(),
+        selection_service=ExperimentSelectionService(),
+    )
+
+    assert replay_calls == [
+        "experiments/runs/baseline",
+        "experiments/runs/candidate-a",
+    ]
+    assert judge_calls == ["baseline", "candidate-a"]
+    assert adapter_calls == [
+        ("baseline", 0.52, "baseline summary"),
+        ("candidate-a", 0.81, "candidate-a summary"),
+    ]
+    assert judgement == {
+        "experiment_id": "exp-judge-001",
+        "target_metric": "guidance_success_rate",
+        "status": "completed",
+        "candidate_scores": [
+            {
+                "candidate_name": "baseline",
+                "run_dir": "experiments/runs/baseline",
+                "score": 0.52,
+                "summary": "baseline summary",
+                "metrics": {"action_match_rate": 0.6},
+            },
+            {
+                "candidate_name": "candidate-a",
+                "run_dir": "experiments/runs/candidate-a",
+                "score": 0.81,
+                "summary": "candidate-a summary",
+                "metrics": {"action_match_rate": 0.8},
+            },
+        ],
+        "best_candidate_name": "candidate-a",
+    }

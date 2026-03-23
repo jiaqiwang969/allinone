@@ -336,3 +336,95 @@ def test_run_experiment_command_writes_run_directory(tmp_path, monkeypatch):
         "target_detected_rate": 0.5,
         "usable_clip_rate": 1.0,
     }
+
+
+def test_judge_experiment_command_writes_judgement_json(
+    tmp_path, monkeypatch, capsys
+):
+    output = tmp_path / "judgements" / "exp-judge-001.json"
+
+    def fake_judge_experiment_candidates(**kwargs):
+        assert kwargs["experiment_id"] == "exp-judge-001"
+        assert kwargs["hypothesis"] == "compare candidate runs"
+        assert kwargs["target_metric"] == "guidance_success_rate"
+        assert kwargs["candidate_runs"] == [
+            {
+                "candidate_name": "baseline",
+                "run_dir": "/tmp/runs/baseline",
+            },
+            {
+                "candidate_name": "candidate-a",
+                "run_dir": "/tmp/runs/candidate-a",
+            },
+        ]
+        return {
+            "experiment_id": "exp-judge-001",
+            "target_metric": "guidance_success_rate",
+            "status": "completed",
+            "candidate_scores": [
+                {
+                    "candidate_name": "baseline",
+                    "run_dir": "/tmp/runs/baseline",
+                    "score": 0.52,
+                    "summary": "baseline summary",
+                    "metrics": {"action_match_rate": 0.6},
+                },
+                {
+                    "candidate_name": "candidate-a",
+                    "run_dir": "/tmp/runs/candidate-a",
+                    "score": 0.81,
+                    "summary": "candidate-a summary",
+                    "metrics": {"action_match_rate": 0.8},
+                },
+            ],
+            "best_candidate_name": "candidate-a",
+        }
+
+    monkeypatch.setattr(
+        "allinone.interfaces.cli.main.judge_experiment_candidates",
+        fake_judge_experiment_candidates,
+    )
+
+    exit_code = main(
+        [
+            "judge-experiment",
+            "--experiment-id",
+            "exp-judge-001",
+            "--hypothesis",
+            "compare candidate runs",
+            "--target-metric",
+            "guidance_success_rate",
+            "--candidate-run",
+            "baseline=/tmp/runs/baseline",
+            "--candidate-run",
+            "candidate-a=/tmp/runs/candidate-a",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "experiment_id": "exp-judge-001",
+        "target_metric": "guidance_success_rate",
+        "status": "completed",
+        "candidate_scores": [
+            {
+                "candidate_name": "baseline",
+                "run_dir": "/tmp/runs/baseline",
+                "score": 0.52,
+                "summary": "baseline summary",
+                "metrics": {"action_match_rate": 0.6},
+            },
+            {
+                "candidate_name": "candidate-a",
+                "run_dir": "/tmp/runs/candidate-a",
+                "score": 0.81,
+                "summary": "candidate-a summary",
+                "metrics": {"action_match_rate": 0.8},
+            },
+        ],
+        "best_candidate_name": "candidate-a",
+    }
+    assert "best_candidate_name=candidate-a" in captured.out

@@ -34,5 +34,6 @@ class AutoresearchReplayAdapter:
             "run_dir": str(run_path),
             "candidate_name": summary["candidate_name"],
             "summary": summary,
+            "results_path": str(results_path),
             "result_count": result_count,
         }

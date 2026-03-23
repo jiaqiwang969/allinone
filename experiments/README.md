@@ -29,3 +29,15 @@ The command writes:
 - `summary.json`
 - `raw/*.json`
 - `payload/*.json`
+
+Multiple candidate runs can then be judged with:
+
+`python3 -m allinone.interfaces.cli.main judge-experiment --experiment-id exp-judge-001 --hypothesis "compare candidate runs" --target-metric guidance_success_rate --candidate-run baseline=experiments/runs/run-001 --candidate-run candidate-a=experiments/runs/run-002 --output experiments/judgements/exp-judge-001.json`
+
+The judgement output contains:
+
+- `experiment_id`
+- `target_metric`
+- `status`
+- `candidate_scores`
+- `best_candidate_name`

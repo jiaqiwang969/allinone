@@ -16,6 +16,9 @@ from allinone.application.runtime.build_raw_perception_payload import (
 from allinone.application.runtime.build_observation_payload import (
     build_observation_payload_from_raw,
 )
+from allinone.application.research.judge_experiment_candidates import (
+    judge_experiment_candidates,
+)
 from allinone.application.research.run_experiment_batch import run_experiment_batch
 from allinone.application.research.register_experiment import register_experiment
 from allinone.application.runtime.ingest_observation_window import (
@@ -36,9 +39,16 @@ from allinone.infrastructure.perception.yolo.detector import (
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
 )
+from allinone.infrastructure.research.autoresearch.judge_adapter import (
+    AutoresearchJudgeAdapter,
+)
+from allinone.infrastructure.research.autoresearch.rule_based_judge import (
+    RuleBasedAutoresearchJudge,
+)
 from allinone.infrastructure.research.autoresearch.run_writer import (
     AutoresearchRunWriter,
 )
+from allinone.domain.research.services import ExperimentSelectionService
 
 _DEFAULT_LANGUAGE_OUTPUT = """{
     "operator_message": "请向左移动，让仪表回到画面中央。",
@@ -84,6 +94,16 @@ def _build_parser() -> argparse.ArgumentParser:
     run_experiment.add_argument("--vjepa-checkpoint", required=True)
     run_experiment.add_argument("--device", required=False)
     run_experiment.add_argument("--sample-frames", required=False, type=int, default=8)
+    judge_experiment = subparsers.add_parser("judge-experiment")
+    judge_experiment.add_argument("--experiment-id", required=True)
+    judge_experiment.add_argument("--hypothesis", required=True)
+    judge_experiment.add_argument("--target-metric", required=True)
+    judge_experiment.add_argument(
+        "--candidate-run",
+        required=True,
+        action="append",
+    )
+    judge_experiment.add_argument("--output", required=True)
     return parser
 
 
@@ -242,6 +262,37 @@ def _run_experiment(
     return 0
 
 
+def _run_judge_experiment(
+    experiment_id: str,
+    hypothesis: str,
+    target_metric: str,
+    candidate_run_values: list[str],
+    output_path: str,
+) -> int:
+    judgement = judge_experiment_candidates(
+        experiment_id=experiment_id,
+        hypothesis=hypothesis,
+        target_metric=target_metric,
+        candidate_runs=_parse_candidate_runs(candidate_run_values),
+        replay_adapter=AutoresearchReplayAdapter(),
+        candidate_judge=RuleBasedAutoresearchJudge(),
+        judge_adapter=AutoresearchJudgeAdapter(),
+        selection_service=ExperimentSelectionService(),
+    )
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(judgement, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(
+        f"output={destination} "
+        f"best_candidate_name={judgement['best_candidate_name']} "
+        f"status={judgement['status']}"
+    )
+    return 0
+
+
 def _build_sample_payload() -> dict[str, object]:
     return {
         "prediction_rows": [
@@ -272,6 +323,21 @@ def _load_manifest_rows(manifest_path: str) -> list[dict[str, object]]:
         for line in Path(manifest_path).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def _parse_candidate_runs(values: list[str]) -> list[dict[str, str]]:
+    candidate_runs: list[dict[str, str]] = []
+    for value in values:
+        candidate_name, separator, run_dir = value.partition("=")
+        if not separator or not candidate_name.strip() or not run_dir.strip():
+            raise ValueError("candidate-run must use the format <name>=<run_dir>")
+        candidate_runs.append(
+            {
+                "candidate_name": candidate_name.strip(),
+                "run_dir": run_dir.strip(),
+            }
+        )
+    return candidate_runs
 
 
 def _resolve_qwen_recipe_path() -> Path:
@@ -334,6 +400,14 @@ def main(argv: list[str] | None = None) -> int:
             vjepa_checkpoint=args.vjepa_checkpoint,
             device=args.device,
             sample_frames=args.sample_frames,
+        )
+    if args.command == "judge-experiment":
+        return _run_judge_experiment(
+            experiment_id=args.experiment_id,
+            hypothesis=args.hypothesis,
+            target_metric=args.target_metric,
+            candidate_run_values=args.candidate_run,
+            output_path=args.output,
         )
     if args.command == "research-smoke":
         return _run_research_smoke()
