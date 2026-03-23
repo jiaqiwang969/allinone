@@ -1,0 +1,13 @@
+{
+  "prediction_rows": [
+    {
+      "label": "meter",
+      "confidence": 0.91,
+      "xyxy": [600, 200, 900, 800]
+    }
+  ],
+  "image_size": [1000, 1000],
+  "target_labels": ["meter"],
+  "visibility_score": 0.85,
+  "readable_ratio": 0.8
+}

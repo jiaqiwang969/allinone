@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -37,6 +38,8 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("guidance-smoke")
     subparsers.add_parser("language-smoke")
     subparsers.add_parser("research-smoke")
+    runtime_observation = subparsers.add_parser("runtime-observation")
+    runtime_observation.add_argument("--input", required=True)
     return parser
 
 
@@ -73,7 +76,24 @@ def _run_research_smoke() -> int:
 
 
 def _run_language_smoke() -> int:
+    observation = _build_sample_observation()
+    return _print_guidance_and_language(observation)
+
+
+def _run_runtime_observation(input_path: str) -> int:
+    payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
     observation = ingest_observation_window(
+        prediction_rows=payload["prediction_rows"],
+        image_size=tuple(payload["image_size"]),
+        target_labels=tuple(payload["target_labels"]),
+        visibility_score=float(payload["visibility_score"]),
+        readable_ratio=float(payload["readable_ratio"]),
+    )
+    return _print_guidance_and_language(observation)
+
+
+def _build_sample_observation():
+    return ingest_observation_window(
         prediction_rows=[
             {"label": "meter", "confidence": 0.91, "xyxy": [600, 200, 900, 800]},
         ],
@@ -82,6 +102,9 @@ def _run_language_smoke() -> int:
         visibility_score=0.85,
         readable_ratio=0.8,
     )
+
+
+def _print_guidance_and_language(observation) -> int:
     decision = request_guidance_decision(observation)
     prompt = QwenPromptBuilder().build_guidance_explanation_prompt(
         observation=observation,
@@ -89,6 +112,8 @@ def _run_language_smoke() -> int:
     )
     parsed, source = _generate_language_explanation(prompt)
     print(
+        f"guidance_action={decision.action.value} "
+        f"reason={decision.reason} "
         f"language_action={parsed.suggested_action} "
         f"confidence={parsed.confidence:.2f} "
         f"source={source} "
@@ -128,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_guidance_smoke()
     if args.command == "language-smoke":
         return _run_language_smoke()
+    if args.command == "runtime-observation":
+        return _run_runtime_observation(args.input)
     if args.command == "research-smoke":
         return _run_research_smoke()
     return 1
