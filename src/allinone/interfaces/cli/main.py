@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 
 from allinone.application.research.register_experiment import register_experiment
+from allinone.application.runtime.ingest_observation_window import (
+    ingest_observation_window,
+)
 from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
-from allinone.domain.perception.entities import PerceptionObservation
-from allinone.domain.shared.value_objects import BoundingBox, CenterOffset
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
 )
@@ -25,12 +26,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_guidance_smoke() -> int:
-    observation = PerceptionObservation(
-        visibility_score=0.7,
+    observation = ingest_observation_window(
+        prediction_rows=[
+            {"label": "meter", "confidence": 0.91, "xyxy": [600, 200, 900, 800]},
+        ],
+        image_size=(1000, 1000),
+        target_labels=("meter",),
+        visibility_score=0.85,
         readable_ratio=0.8,
-        fill_ratio=0.5,
-        center_offset=CenterOffset(dx=0.25, dy=0.0),
-        roi=BoundingBox(x1=0.1, y1=0.1, x2=0.9, y2=0.9),
     )
     decision = request_guidance_decision(observation)
     print(f"guidance_action={decision.action.value} reason={decision.reason}")
