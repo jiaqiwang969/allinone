@@ -54,6 +54,8 @@ def run_runtime_observation(
     output_parser: QwenStructuredOutputParser | None = None,
     text_generator: RuntimeTextGenerator | None = None,
 ) -> dict[str, object]:
+    if not payload["prediction_rows"]:
+        return _build_missing_target_result()
     observation = ingest_observation_window(
         prediction_rows=list(payload["prediction_rows"]),
         image_size=tuple(payload["image_size"]),
@@ -86,3 +88,15 @@ def _default_recipe_path() -> Path:
     if override:
         return Path(override)
     return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen35_9b.yaml"
+
+
+def _build_missing_target_result() -> dict[str, object]:
+    return {
+        "guidance_action": "hold_still",
+        "reason": "target_not_detected",
+        "language_action": "hold_still",
+        "confidence": 0.0,
+        "operator_message": "未检测到目标，请移动镜头搜索目标区域。",
+        "evidence_focus": "先让目标进入画面，再继续判断取景质量",
+        "language_source": "fallback",
+    }

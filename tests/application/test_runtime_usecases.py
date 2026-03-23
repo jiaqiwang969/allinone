@@ -393,3 +393,34 @@ def test_run_runtime_observation_returns_structured_runtime_result():
         "evidence_focus": "确保整个表盘完整可见",
         "language_source": "fake-qwen",
     }
+
+
+def test_run_runtime_observation_handles_missing_target_without_crashing():
+    from allinone.application.runtime.run_runtime_observation import (
+        run_runtime_observation,
+    )
+
+    class FailIfCalledTextGenerator:
+        def generate(self, prompt: str):
+            raise AssertionError(f"text generator should not run: {prompt}")
+
+    result = run_runtime_observation(
+        payload={
+            "prediction_rows": [],
+            "image_size": [1000, 1000],
+            "target_labels": ["meter"],
+            "visibility_score": 0.22,
+            "readable_ratio": 0.18,
+        },
+        text_generator=FailIfCalledTextGenerator(),
+    )
+
+    assert result == {
+        "guidance_action": "hold_still",
+        "reason": "target_not_detected",
+        "language_action": "hold_still",
+        "confidence": 0.0,
+        "operator_message": "未检测到目标，请移动镜头搜索目标区域。",
+        "evidence_focus": "先让目标进入画面，再继续判断取景质量",
+        "language_source": "fallback",
+    }
