@@ -6,6 +6,7 @@ def test_autoresearch_adapters_exist():
         "allinone.infrastructure.research.autoresearch.replay_adapter",
         "allinone.infrastructure.research.autoresearch.judge_adapter",
         "allinone.infrastructure.research.autoresearch.policy_candidate_proposer",
+        "allinone.infrastructure.research.autoresearch.raw_payload_loader",
         "allinone.infrastructure.research.autoresearch.rule_based_judge",
         "allinone.infrastructure.research.autoresearch.run_writer",
     ]

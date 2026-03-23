@@ -338,6 +338,116 @@ def test_run_experiment_command_writes_run_directory(tmp_path, monkeypatch):
     }
 
 
+def test_run_experiment_command_can_replay_raw_payload_manifest(
+    tmp_path, monkeypatch
+):
+    manifest = tmp_path / "manifest.jsonl"
+    raw_payload = tmp_path / "raw" / "clip-raw.json"
+    run_dir = tmp_path / "runs" / "raw-replay"
+    raw_payload.parent.mkdir(parents=True)
+    raw_payload.write_text(
+        json.dumps(
+            {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "meter",
+                            "confidence": 0.95,
+                            "xyxy": [560, 180, 920, 820],
+                        }
+                    ],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                    "best_frame_index": 1,
+                },
+                "vjepa": {
+                    "visibility_score": 0.84,
+                    "readable_ratio": 0.8,
+                    "stability_score": 0.91,
+                    "alignment_score": 0.87,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        json.dumps(
+            {
+                "clip_id": "clip-raw-001",
+                "raw_payload_path": str(raw_payload),
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "hold_still",
+                "notes": "基于冻结 raw payload 的 replay",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_if_called(**kwargs):
+        raise AssertionError("analyze-clip path should not be used for raw payload replay")
+
+    def fake_run_runtime_observation_usecase(*, payload):
+        assert payload == {
+            "prediction_rows": [
+                {
+                    "label": "meter",
+                    "confidence": 0.95,
+                    "xyxy": [560, 180, 920, 820],
+                }
+            ],
+            "image_size": [1000, 1000],
+            "target_labels": ["meter"],
+            "visibility_score": 0.84,
+            "readable_ratio": 0.8,
+        }
+        return {
+            "guidance_action": "hold_still",
+            "reason": "fully_centered",
+            "language_action": "hold_still",
+            "confidence": 0.81,
+            "operator_message": "保持当前角度",
+            "evidence_focus": "继续稳定画面",
+            "language_source": "fake-qwen",
+        }
+
+    monkeypatch.setattr(
+        "allinone.interfaces.cli.main.build_raw_perception_payload_from_clip",
+        fail_if_called,
+    )
+    monkeypatch.setattr(
+        "allinone.interfaces.cli.main.run_runtime_observation_usecase",
+        fake_run_runtime_observation_usecase,
+    )
+
+    exit_code = main(
+        [
+            "run-experiment",
+            "--manifest",
+            str(manifest),
+            "--run-dir",
+            str(run_dir),
+            "--candidate",
+            "baseline",
+            "--yolo-model",
+            "mock-yolo.pt",
+            "--vjepa-repo",
+            "/models/vjepa2",
+            "--vjepa-checkpoint",
+            "/models/vjepa2/model.pt",
+        ]
+    )
+
+    assert exit_code == 0
+    assert json.loads((run_dir / "summary.json").read_text(encoding="utf-8")) == {
+        "candidate_name": "baseline",
+        "clip_count": 1,
+        "action_match_rate": 1.0,
+        "target_detected_rate": 1.0,
+        "usable_clip_rate": 1.0,
+    }
+
+
 def test_judge_experiment_command_writes_judgement_json(
     tmp_path, monkeypatch, capsys
 ):

@@ -41,6 +41,9 @@ from allinone.infrastructure.perception.yolo.detector import (
 from allinone.infrastructure.research.autoresearch.policy_candidate_proposer import (
     RuleBasedPolicyCandidateProposer,
 )
+from allinone.infrastructure.research.autoresearch.raw_payload_loader import (
+    JsonRawPayloadLoader,
+)
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
 )
@@ -273,6 +276,7 @@ def _run_experiment(
                 device=device,
             ),
         ),
+        raw_payload_loader=JsonRawPayloadLoader(),
         runtime_runner=run_runtime_observation_usecase,
         run_writer=AutoresearchRunWriter(run_dir=run_dir),
     )
@@ -483,6 +487,7 @@ class _CliExperimentBatchRunner:
                     device=self.device,
                 ),
             ),
+            raw_payload_loader=JsonRawPayloadLoader(),
             runtime_runner=lambda *, payload: run_runtime_observation_usecase(
                 payload=payload,
                 guidance_thresholds=guidance_thresholds,

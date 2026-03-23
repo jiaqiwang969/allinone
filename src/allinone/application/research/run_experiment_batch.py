@@ -22,6 +22,10 @@ class RuntimeRunner(Protocol):
     def __call__(self, *, payload: dict[str, object]) -> dict[str, object]: ...
 
 
+class RawPayloadLoader(Protocol):
+    def load(self, path: str) -> dict[str, object]: ...
+
+
 class RunWriter(Protocol):
     def write(
         self,
@@ -37,14 +41,16 @@ def run_experiment_batch(
     manifest_rows: list[dict[str, object]],
     candidate_name: str,
     clip_analyzer: ClipAnalyzer,
+    raw_payload_loader: RawPayloadLoader | None = None,
     runtime_runner: RuntimeRunner,
     run_writer: RunWriter,
 ) -> dict[str, object]:
     result_rows: list[dict[str, object]] = []
     for manifest_row in manifest_rows:
-        raw_payload = clip_analyzer(
-            clip_path=str(manifest_row["clip_path"]),
-            target_labels=tuple(manifest_row["target_labels"]),
+        raw_payload = _resolve_raw_payload(
+            manifest_row=manifest_row,
+            clip_analyzer=clip_analyzer,
+            raw_payload_loader=raw_payload_loader,
         )
         payload = build_observation_payload_from_raw(raw_payload)
         runtime_result = runtime_runner(payload=payload)
@@ -66,6 +72,23 @@ def run_experiment_batch(
             candidate_name=candidate_name,
         ),
     }
+
+
+def _resolve_raw_payload(
+    *,
+    manifest_row: dict[str, object],
+    clip_analyzer: ClipAnalyzer,
+    raw_payload_loader: RawPayloadLoader | None,
+) -> dict[str, object]:
+    raw_payload_path = manifest_row.get("raw_payload_path")
+    if raw_payload_path is not None:
+        if raw_payload_loader is None:
+            raise ValueError("raw_payload_loader is required for raw payload replay")
+        return raw_payload_loader.load(str(raw_payload_path))
+    return clip_analyzer(
+        clip_path=str(manifest_row["clip_path"]),
+        target_labels=tuple(manifest_row["target_labels"]),
+    )
 
 
 def _build_result_row(

@@ -1,3 +1,5 @@
+import json
+
 from allinone.application.research.register_experiment import register_experiment
 from allinone.domain.research.entities import CandidateEvaluation, ExperimentRun
 from allinone.domain.research.services import ExperimentSelectionService
@@ -252,6 +254,179 @@ def test_run_experiment_batch_returns_clip_aggregated_results():
     assert writer_calls == [
         (
             manifest_rows,
+            batch["results"],
+            "baseline",
+        )
+    ]
+
+
+def test_run_experiment_batch_can_replay_rows_from_raw_payload_path(tmp_path):
+    from allinone.application.research.run_experiment_batch import (
+        run_experiment_batch,
+    )
+
+    raw_payload_path = tmp_path / "raw" / "clip-raw.json"
+    raw_payload_path.parent.mkdir(parents=True)
+    raw_payload_path.write_text(
+        json.dumps(
+            {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "meter",
+                            "confidence": 0.96,
+                            "xyxy": [560, 180, 920, 820],
+                        }
+                    ],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                    "best_frame_index": 1,
+                },
+                "vjepa": {
+                    "visibility_score": 0.82,
+                    "readable_ratio": 0.79,
+                    "stability_score": 0.9,
+                    "alignment_score": 0.86,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    analyzer_calls = []
+    runtime_calls = []
+    writer_calls = []
+
+    def fake_clip_analyzer(*, clip_path, target_labels):
+        analyzer_calls.append((clip_path, target_labels))
+        raise AssertionError("clip_analyzer should not be called for raw payload replay")
+
+    class FakeRawPayloadLoader:
+        def load(self, path):
+            assert path == str(raw_payload_path)
+            return json.loads(raw_payload_path.read_text(encoding="utf-8"))
+
+    def fake_runtime_runner(*, payload):
+        runtime_calls.append(payload)
+        return {
+            "guidance_action": "hold_still",
+            "reason": "fully_centered",
+            "language_action": "hold_still",
+            "confidence": 0.88,
+            "operator_message": "保持当前角度",
+            "evidence_focus": "继续稳定画面",
+            "language_source": "fake-qwen",
+        }
+
+    class FakeRunWriter:
+        def write(self, *, manifest_rows, result_rows, candidate_name):
+            writer_calls.append((manifest_rows, result_rows, candidate_name))
+            return {
+                "run_dir": "experiments/runs/raw-replay-demo",
+                "result_count": len(result_rows),
+            }
+
+    batch = run_experiment_batch(
+        manifest_rows=[
+            {
+                "clip_id": "clip-raw-001",
+                "raw_payload_path": str(raw_payload_path),
+                "target_labels": ["meter"],
+                "task_type": "view_guidance",
+                "expected_action": "hold_still",
+                "notes": "冻结 raw payload replay",
+            }
+        ],
+        candidate_name="baseline",
+        clip_analyzer=fake_clip_analyzer,
+        raw_payload_loader=FakeRawPayloadLoader(),
+        runtime_runner=fake_runtime_runner,
+        run_writer=FakeRunWriter(),
+    )
+
+    assert analyzer_calls == []
+    assert runtime_calls == [
+        {
+            "prediction_rows": [
+                {
+                    "label": "meter",
+                    "confidence": 0.96,
+                    "xyxy": [560, 180, 920, 820],
+                }
+            ],
+            "image_size": [1000, 1000],
+            "target_labels": ["meter"],
+            "visibility_score": 0.82,
+            "readable_ratio": 0.79,
+        }
+    ]
+    assert batch["results"] == [
+        {
+            "clip_id": "clip-raw-001",
+            "candidate_name": "baseline",
+            "task_type": "view_guidance",
+            "target_labels": ["meter"],
+            "expected_action": "hold_still",
+            "guidance_action": "hold_still",
+            "language_action": "hold_still",
+            "action_match": True,
+            "target_detected": True,
+            "best_frame_index": 1,
+            "visibility_score": 0.82,
+            "readable_ratio": 0.79,
+            "stability_score": 0.9,
+            "alignment_score": 0.86,
+            "operator_message": "保持当前角度",
+            "evidence_focus": "继续稳定画面",
+            "language_source": "fake-qwen",
+            "error": None,
+            "raw_payload": {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "meter",
+                            "confidence": 0.96,
+                            "xyxy": [560, 180, 920, 820],
+                        }
+                    ],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                    "best_frame_index": 1,
+                },
+                "vjepa": {
+                    "visibility_score": 0.82,
+                    "readable_ratio": 0.79,
+                    "stability_score": 0.9,
+                    "alignment_score": 0.86,
+                },
+            },
+            "payload": {
+                "prediction_rows": [
+                    {
+                        "label": "meter",
+                        "confidence": 0.96,
+                        "xyxy": [560, 180, 920, 820],
+                    }
+                ],
+                "image_size": [1000, 1000],
+                "target_labels": ["meter"],
+                "visibility_score": 0.82,
+                "readable_ratio": 0.79,
+            },
+        }
+    ]
+    assert writer_calls == [
+        (
+            [
+                {
+                    "clip_id": "clip-raw-001",
+                    "raw_payload_path": str(raw_payload_path),
+                    "target_labels": ["meter"],
+                    "task_type": "view_guidance",
+                    "expected_action": "hold_still",
+                    "notes": "冻结 raw payload replay",
+                }
+            ],
             batch["results"],
             "baseline",
         )
