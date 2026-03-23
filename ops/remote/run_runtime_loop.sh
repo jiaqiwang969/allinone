@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "run runtime loop placeholder"
+REMOTE_HOST="${REMOTE_HOST:-dell@192.168.1.104}"
+REMOTE_ROOT="${REMOTE_ROOT:-/media/dell/eef6db82-afa8-4850-96b0-fdad3cf7025d/workspaces/allinone}"
+
+ssh "$REMOTE_HOST" "
+  cd '$REMOTE_ROOT' && \
+  . .venv/bin/activate && \
+  export PYTHONPATH='$REMOTE_ROOT/src' && \
+  python3 -m allinone.interfaces.cli.main guidance-smoke && \
+  python3 -m allinone.interfaces.cli.main research-smoke
+"
