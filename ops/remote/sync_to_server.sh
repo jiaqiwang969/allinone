@@ -10,4 +10,8 @@ rsync -av --delete \
   --exclude '.venv' \
   --exclude '.pytest_cache' \
   --exclude '__pycache__' \
+  --exclude 'experiments/generated' \
+  --exclude 'experiments/research' \
+  --exclude 'qwen_service.log' \
+  --exclude 'qwen_service.pid' \
   ./ "$REMOTE_HOST:$REMOTE_ROOT/"

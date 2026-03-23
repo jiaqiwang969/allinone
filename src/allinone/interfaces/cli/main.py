@@ -32,6 +32,8 @@ from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
 from allinone.infrastructure.language.qwen.client import QwenClient
+from allinone.infrastructure.language.qwen.gateway import QwenGateway
+from allinone.infrastructure.language.qwen.schemas import QwenGatewayConfig
 from allinone.infrastructure.guidance.policy_recipe import RuntimePolicyRecipeStore
 from allinone.infrastructure.perception.video.sampler import ClipFrameSampler
 from allinone.infrastructure.perception.vjepa.encoder import VJEPAEncoderAdapter
@@ -61,6 +63,7 @@ from allinone.infrastructure.research.autoresearch.run_writer import (
 )
 from allinone.domain.guidance.services import GuidanceThresholds
 from allinone.domain.research.services import ExperimentSelectionService
+from allinone.interfaces.qwen_service import build_qwen_service_server
 
 _DEFAULT_LANGUAGE_OUTPUT = """{
     "operator_message": "请向左移动，让仪表回到画面中央。",
@@ -100,6 +103,9 @@ def _build_parser() -> argparse.ArgumentParser:
     build_guidance_replay_dataset.add_argument("--target-label", required=True)
     subparsers.add_parser("guidance-smoke")
     subparsers.add_parser("language-smoke")
+    serve_qwen = subparsers.add_parser("serve-qwen")
+    serve_qwen.add_argument("--host", required=False, default="127.0.0.1")
+    serve_qwen.add_argument("--port", required=False, type=int, default=8001)
     subparsers.add_parser("research-smoke")
     runtime_observation = subparsers.add_parser("runtime-observation")
     runtime_observation.add_argument("--input", required=True)
@@ -179,10 +185,7 @@ def _run_research_smoke() -> int:
 def _run_build_observation_payload(input_path: str, output_path: str) -> int:
     raw_payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
     payload = build_observation_payload_from_raw(raw_payload)
-    Path(output_path).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_json_output(output_path, payload)
     return 0
 
 
@@ -220,10 +223,7 @@ def _run_detect_image(
         model_path=model_path,
         device=device,
     )
-    Path(output_path).write_text(
-        json.dumps(raw_payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_json_output(output_path, raw_payload)
     return 0
 
 
@@ -253,10 +253,7 @@ def _run_analyze_clip(
             device=device,
         ),
     )
-    Path(output_path).write_text(
-        json.dumps(raw_payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_json_output(output_path, raw_payload)
     return 0
 
 
@@ -266,6 +263,27 @@ def _run_language_smoke() -> int:
         text_generator=_CliRuntimeTextGenerator(),
     )
     return _print_runtime_result(result)
+
+
+def _run_serve_qwen(host: str, port: int) -> int:
+    config = QwenGatewayConfig.from_recipe(_resolve_qwen_gateway_recipe_path())
+    client = QwenClient(
+        model_id=config.model_id,
+        model_path=config.runtime_path,
+        device=config.device,
+        max_new_tokens=config.max_new_tokens,
+        temperature=config.temperature,
+    )
+    if not client.is_runtime_available():
+        raise RuntimeError("Qwen runtime is not available for service startup")
+    server = build_qwen_service_server(
+        host=host,
+        port=port,
+        text_generator=client,
+    )
+    print(f"qwen_service=http://{host}:{port} status=starting")
+    server.serve_forever()
+    return 0
 
 
 def _run_runtime_observation(input_path: str) -> int:
@@ -336,12 +354,7 @@ def _run_judge_experiment(
         judge_adapter=AutoresearchJudgeAdapter(),
         selection_service=ExperimentSelectionService(),
     )
-    destination = Path(output_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(
-        json.dumps(judgement, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    destination = _write_json_output(output_path, judgement)
     print(
         f"output={destination} "
         f"best_candidate_name={judgement['best_candidate_name']} "
@@ -385,18 +398,9 @@ def _run_research_step(
         ),
         judge_usecase=_CliExperimentJudgeUseCase(),
     )
-    destination = Path(output_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    destination = _write_json_output(output_path, result)
     judgement_path = Path(run_root) / "judgement.json"
-    judgement_path.parent.mkdir(parents=True, exist_ok=True)
-    judgement_path.write_text(
-        json.dumps(result["judgement"], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    judgement_path = _write_json_output(judgement_path, result["judgement"])
     print(
         f"output={destination} "
         f"judgement={judgement_path} "
@@ -416,6 +420,16 @@ def _build_sample_payload() -> dict[str, object]:
         "visibility_score": 0.85,
         "readable_ratio": 0.8,
     }
+
+
+def _write_json_output(path: str | Path, payload: object) -> Path:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return destination
 
 
 def _print_runtime_result(result: dict[str, object]) -> int:
@@ -460,17 +474,34 @@ def _resolve_qwen_recipe_path() -> Path:
     return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen35_9b.yaml"
 
 
+def _resolve_qwen_gateway_recipe_path() -> Path:
+    override = os.environ.get("ALLINONE_QWEN_GATEWAY_RECIPE")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen_gateway.yaml"
+
+
 class _CliRuntimeTextGenerator:
+    def __init__(self) -> None:
+        self._gateway: QwenGateway | None = None
+
     def generate(self, prompt: str) -> tuple[str, str]:
-        recipe = _resolve_qwen_recipe_path()
-        if recipe.exists():
+        gateway = self._resolve_gateway()
+        if gateway is not None:
             try:
-                client = QwenClient.from_recipe(recipe)
-                if client.is_runtime_available():
-                    return client.generate_text(prompt), "qwen"
+                return gateway.generate_text(prompt)
             except RuntimeError:
                 pass
         return _DEFAULT_LANGUAGE_OUTPUT, "mock"
+
+    def _resolve_gateway(self) -> QwenGateway | None:
+        if self._gateway is not None:
+            return self._gateway
+        recipe = _resolve_qwen_gateway_recipe_path()
+        if not recipe.exists():
+            return None
+        self._gateway = QwenGateway(config=QwenGatewayConfig.from_recipe(recipe))
+        return self._gateway
 
 
 class _CliExperimentBatchRunner:
@@ -488,6 +519,7 @@ class _CliExperimentBatchRunner:
         self.vjepa_checkpoint = vjepa_checkpoint
         self.device = device
         self.sample_frames = sample_frames
+        self.text_generator = _CliRuntimeTextGenerator()
 
     def run(
         self,
@@ -519,7 +551,7 @@ class _CliExperimentBatchRunner:
             runtime_runner=lambda *, payload: run_runtime_observation_usecase(
                 payload=payload,
                 guidance_thresholds=guidance_thresholds,
-                text_generator=_CliRuntimeTextGenerator(),
+                text_generator=self.text_generator,
             ),
             run_writer=AutoresearchRunWriter(run_dir=run_dir),
         )
@@ -580,6 +612,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_guidance_smoke()
     if args.command == "language-smoke":
         return _run_language_smoke()
+    if args.command == "serve-qwen":
+        return _run_serve_qwen(args.host, args.port)
     if args.command == "runtime-observation":
         return _run_runtime_observation(args.input)
     if args.command == "run-experiment":

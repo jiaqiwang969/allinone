@@ -494,3 +494,58 @@ def test_run_runtime_observation_handles_missing_target_without_crashing():
         "evidence_focus": "先让目标进入画面，再继续判断取景质量",
         "language_source": "fallback",
     }
+
+
+def test_qwen_runtime_text_generator_reuses_qwen_client(tmp_path, monkeypatch):
+    from allinone.application.runtime.run_runtime_observation import (
+        QwenRuntimeTextGenerator,
+    )
+
+    recipe = tmp_path / "qwen_gateway.yaml"
+    recipe.write_text("model_id: test\nruntime_path: /tmp/qwen\n", encoding="utf-8")
+    calls = {"from_recipe": 0, "gateway_init": 0, "generate_text": 0}
+
+    class FakeGateway:
+        def __init__(self, config) -> None:
+            calls["gateway_init"] += 1
+            self.config = config
+
+        def generate_text(self, prompt: str):
+            calls["generate_text"] += 1
+            return (
+                """{
+                "operator_message": "请向左移动，让仪表回到画面中央。",
+                "suggested_action": "left",
+                "confidence": 0.93,
+                "evidence_focus": "确保整个表盘完整可见"
+            }""",
+                "service",
+            )
+
+    class FakeGatewayConfig:
+        @staticmethod
+        def from_recipe(path):
+            calls["from_recipe"] += 1
+            assert path == recipe
+            return object()
+
+    monkeypatch.setattr(
+        "allinone.application.runtime.run_runtime_observation.QwenGatewayConfig",
+        FakeGatewayConfig,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "allinone.application.runtime.run_runtime_observation.QwenGateway",
+        FakeGateway,
+        raising=False,
+    )
+
+    generator = QwenRuntimeTextGenerator(recipe)
+
+    assert generator.generate("prompt-1")[1] == "service"
+    assert generator.generate("prompt-2")[1] == "service"
+    assert calls == {
+        "from_recipe": 1,
+        "gateway_init": 1,
+        "generate_text": 2,
+    }

@@ -56,8 +56,11 @@ class QwenGatewayConfig:
     @classmethod
     def from_recipe(cls, recipe_path: str | Path) -> "QwenGatewayConfig":
         values = cls._load_simple_yaml(recipe_path)
+        mode = values.get("mode", "auto")
+        if mode == "offline":
+            mode = "local"
         return cls(
-            mode=values.get("mode", "auto"),
+            mode=mode,
             service_url=values.get("service_url", "http://127.0.0.1:8001"),
             service_timeout_seconds=int(values.get("service_timeout_seconds", "30")),
             model_id=values["model_id"],

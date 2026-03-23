@@ -13,8 +13,9 @@ from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
 from allinone.domain.guidance.services import GuidanceThresholds
-from allinone.infrastructure.language.qwen.client import QwenClient
+from allinone.infrastructure.language.qwen.gateway import QwenGateway
 from allinone.infrastructure.language.qwen.prompt_builder import QwenPromptBuilder
+from allinone.infrastructure.language.qwen.schemas import QwenGatewayConfig
 from allinone.infrastructure.language.qwen.structured_output import (
     QwenStructuredOutputParser,
 )
@@ -32,20 +33,30 @@ class RuntimeTextGenerator(Protocol):
 
 
 class QwenRuntimeTextGenerator:
-    """Generate runtime explanations from an offline Qwen deployment."""
+    """Generate runtime explanations through the shared Qwen gateway."""
 
     def __init__(self, recipe_path: str | Path | None = None) -> None:
         self.recipe_path = Path(recipe_path) if recipe_path is not None else _default_recipe_path()
+        self._gateway: QwenGateway | None = None
 
     def generate(self, prompt: str) -> tuple[str, str]:
-        if self.recipe_path.exists():
+        gateway = self._resolve_gateway()
+        if gateway is not None:
             try:
-                client = QwenClient.from_recipe(self.recipe_path)
-                if client.is_runtime_available():
-                    return client.generate_text(prompt), "qwen"
+                return gateway.generate_text(prompt)
             except RuntimeError:
                 pass
         return _DEFAULT_LANGUAGE_OUTPUT, "mock"
+
+    def _resolve_gateway(self) -> QwenGateway | None:
+        if self._gateway is not None:
+            return self._gateway
+        if not self.recipe_path.exists():
+            return None
+        self._gateway = QwenGateway(
+            config=QwenGatewayConfig.from_recipe(self.recipe_path)
+        )
+        return self._gateway
 
 
 def run_runtime_observation(
@@ -89,10 +100,13 @@ def run_runtime_observation(
 
 
 def _default_recipe_path() -> Path:
+    override = os.environ.get("ALLINONE_QWEN_GATEWAY_RECIPE")
+    if override:
+        return Path(override)
     override = os.environ.get("ALLINONE_QWEN_RECIPE")
     if override:
         return Path(override)
-    return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen35_9b.yaml"
+    return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen_gateway.yaml"
 
 
 def _build_missing_target_result() -> dict[str, object]:

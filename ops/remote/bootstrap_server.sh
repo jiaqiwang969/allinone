@@ -17,5 +17,7 @@ ssh "$REMOTE_HOST" "
   python3 -m venv --clear .venv && \
   . .venv/bin/activate && \
   pip install --upgrade pip && \
-  pip install -e .
+  pip install -e . && \
+  bash ops/remote/start_qwen_service.sh && \
+  bash ops/remote/check_qwen_service.sh
 "
