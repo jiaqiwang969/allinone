@@ -48,3 +48,52 @@ def test_runtime_observation_command_prints_guidance_and_language(
     assert "reason=target_shifted_right" in captured.out
     assert "language_action=left" in captured.out
     assert "source=mock" in captured.out
+
+
+def test_build_observation_payload_command_writes_standard_payload(tmp_path):
+    raw_input = tmp_path / "raw-perception.json"
+    output = tmp_path / "payload.json"
+    raw_input.write_text(
+        json.dumps(
+            {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "meter",
+                            "confidence": 0.91,
+                            "xyxy": [600, 200, 900, 800],
+                        }
+                    ],
+                    "image_size": [1000, 1000],
+                    "target_labels": ["meter"],
+                },
+                "vjepa": {
+                    "visibility_score": 0.85,
+                    "readable_ratio": 0.8,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "build-observation-payload",
+            "--input",
+            str(raw_input),
+            "--output",
+            str(output),
+        ]
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert payload == {
+        "prediction_rows": [
+            {"label": "meter", "confidence": 0.91, "xyxy": [600, 200, 900, 800]}
+        ],
+        "image_size": [1000, 1000],
+        "target_labels": ["meter"],
+        "visibility_score": 0.85,
+        "readable_ratio": 0.8,
+    }

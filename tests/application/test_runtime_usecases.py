@@ -1,3 +1,6 @@
+from allinone.application.runtime.build_observation_payload import (
+    build_observation_payload,
+)
 from allinone.application.runtime.capture_evidence import capture_evidence
 from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
@@ -62,3 +65,25 @@ def test_capture_evidence_usecase_adds_item_and_assesses_bundle():
     )
 
     assert second_assessment.acceptable is True
+
+
+def test_build_observation_payload_merges_detections_and_quality_signal():
+    payload = build_observation_payload(
+        prediction_rows=[
+            {"label": "meter", "confidence": 0.91, "xyxy": [600, 200, 900, 800]}
+        ],
+        image_size=(1000, 1000),
+        target_labels=("meter",),
+        visibility_score=0.85,
+        readable_ratio=0.8,
+    )
+
+    assert payload == {
+        "prediction_rows": [
+            {"label": "meter", "confidence": 0.91, "xyxy": [600, 200, 900, 800]}
+        ],
+        "image_size": [1000, 1000],
+        "target_labels": ["meter"],
+        "visibility_score": 0.85,
+        "readable_ratio": 0.8,
+    }

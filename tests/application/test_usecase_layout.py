@@ -3,6 +3,7 @@ from importlib import import_module
 
 def test_application_usecase_modules_exist():
     modules = [
+        "allinone.application.runtime.build_observation_payload",
         "allinone.application.runtime.ingest_observation_window",
         "allinone.application.runtime.request_guidance_decision",
         "allinone.application.runtime.capture_evidence",

@@ -5,3 +5,6 @@ allinone research loop.
 
 Sample runtime payloads live under `experiments/samples/` and can be passed to
 `python3 -m allinone.interfaces.cli.main runtime-observation --input ...`.
+
+Raw upstream perception examples also live under `experiments/samples/` and can
+be converted with `python3 -m allinone.interfaces.cli.main build-observation-payload`.

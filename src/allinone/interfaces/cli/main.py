@@ -7,6 +7,9 @@ import json
 import os
 from pathlib import Path
 
+from allinone.application.runtime.build_observation_payload import (
+    build_observation_payload_from_raw,
+)
 from allinone.application.research.register_experiment import register_experiment
 from allinone.application.runtime.ingest_observation_window import (
     ingest_observation_window,
@@ -35,6 +38,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="allinone")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True
+    build_observation_payload = subparsers.add_parser("build-observation-payload")
+    build_observation_payload.add_argument("--input", required=True)
+    build_observation_payload.add_argument("--output", required=True)
     subparsers.add_parser("guidance-smoke")
     subparsers.add_parser("language-smoke")
     subparsers.add_parser("research-smoke")
@@ -71,6 +77,16 @@ def _run_research_smoke() -> int:
         f"experiment_id={payload['experiment_id']} "
         f"target_metric={payload['target_metric']} "
         f"candidate_names={candidate_names}"
+    )
+    return 0
+
+
+def _run_build_observation_payload(input_path: str, output_path: str) -> int:
+    raw_payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
+    payload = build_observation_payload_from_raw(raw_payload)
+    Path(output_path).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     return 0
 
@@ -149,6 +165,8 @@ def _generate_language_explanation(prompt: str):
 def main(argv: list[str] | None = None) -> int:
     """Run the allinone CLI."""
     args = _build_parser().parse_args(argv)
+    if args.command == "build-observation-payload":
+        return _run_build_observation_payload(args.input, args.output)
     if args.command == "guidance-smoke":
         return _run_guidance_smoke()
     if args.command == "language-smoke":
