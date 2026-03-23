@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 
 from allinone.application.research.register_experiment import register_experiment
 from allinone.application.runtime.ingest_observation_window import (
@@ -11,6 +13,7 @@ from allinone.application.runtime.ingest_observation_window import (
 from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
+from allinone.infrastructure.language.qwen.client import QwenClient
 from allinone.infrastructure.language.qwen.prompt_builder import QwenPromptBuilder
 from allinone.infrastructure.language.qwen.structured_output import (
     QwenStructuredOutputParser,
@@ -18,6 +21,13 @@ from allinone.infrastructure.language.qwen.structured_output import (
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
 )
+
+_DEFAULT_LANGUAGE_SMOKE_OUTPUT = """{
+    "operator_message": "请向左移动，让仪表回到画面中央。",
+    "suggested_action": "left",
+    "confidence": 0.82,
+    "evidence_focus": "确保整个表盘完整可见"
+}"""
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -77,21 +87,38 @@ def _run_language_smoke() -> int:
         observation=observation,
         decision=decision,
     )
-    _ = prompt
-    parsed = QwenStructuredOutputParser().parse_guidance_explanation(
-        """{
-            "operator_message": "请向左移动，让仪表回到画面中央。",
-            "suggested_action": "left",
-            "confidence": 0.82,
-            "evidence_focus": "确保整个表盘完整可见"
-        }"""
-    )
+    parsed, source = _generate_language_explanation(prompt)
     print(
         f"language_action={parsed.suggested_action} "
         f"confidence={parsed.confidence:.2f} "
+        f"source={source} "
         f"message={parsed.operator_message}"
     )
     return 0
+
+
+def _resolve_qwen_recipe_path() -> Path:
+    override = os.environ.get("ALLINONE_QWEN_RECIPE")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen35_9b.yaml"
+
+
+def _generate_language_explanation(prompt: str):
+    parser = QwenStructuredOutputParser()
+    recipe = _resolve_qwen_recipe_path()
+    if recipe.exists():
+        try:
+            client = QwenClient.from_recipe(recipe)
+            if client.is_runtime_available():
+                raw_text = client.generate_text(prompt)
+                return parser.parse_guidance_explanation(raw_text), "qwen"
+        except RuntimeError:
+            pass
+    return (
+        parser.parse_guidance_explanation(_DEFAULT_LANGUAGE_SMOKE_OUTPUT),
+        "mock",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

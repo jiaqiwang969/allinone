@@ -32,6 +32,9 @@ class QwenClient:
         self.temperature = temperature
         self._pipeline = None
 
+    def is_runtime_available(self) -> bool:
+        return Path(self.model_path).exists()
+
     @classmethod
     def from_recipe(cls, recipe_path: str | Path) -> "QwenClient":
         data = cls._load_simple_yaml(recipe_path)
@@ -79,16 +82,25 @@ class QwenClient:
         if self._pipeline is not None:
             return self._pipeline
         try:
-            from transformers import pipeline
+            from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
         except ImportError as exc:
             raise RuntimeError(
                 "transformers is not installed; cannot run offline Qwen inference"
             ) from exc
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_path,
+            local_files_only=True,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_path,
+            device_map=self.device,
+            local_files_only=True,
+            torch_dtype="auto",
+        )
         self._pipeline = pipeline(
             "text-generation",
-            model=self.model_path,
-            tokenizer=self.model_path,
-            device_map=self.device,
+            model=model,
+            tokenizer=tokenizer,
         )
         return self._pipeline
 

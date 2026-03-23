@@ -1,3 +1,5 @@
+import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 from allinone.domain.guidance.entities import GuidanceDecision
@@ -72,3 +74,68 @@ def test_qwen_client_loads_recipe_and_builds_generation_request():
     assert request.prompt == "hello"
     assert request.max_new_tokens == 256
     assert request.temperature == 0.2
+
+
+def test_qwen_client_builds_local_pipeline_with_auto_dtype(monkeypatch):
+    captured: dict[str, object] = {}
+    fake_tokenizer = object()
+    fake_model = object()
+
+    class FakePipeline:
+        def __call__(self, prompt: str, **kwargs):
+            captured["prompt"] = prompt
+            captured["call_kwargs"] = kwargs
+            return [{"generated_text": '{"operator_message":"ok"}'}]
+
+    def fake_pipeline(task: str, **kwargs):
+        captured["task"] = task
+        captured["pipeline_kwargs"] = kwargs
+        return FakePipeline()
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(model_path: str, **kwargs):
+            captured["tokenizer_model_path"] = model_path
+            captured["tokenizer_kwargs"] = kwargs
+            return fake_tokenizer
+
+    class FakeAutoModelForCausalLM:
+        @staticmethod
+        def from_pretrained(model_path: str, **kwargs):
+            captured["model_model_path"] = model_path
+            captured["model_kwargs"] = kwargs
+            return fake_model
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(
+            AutoModelForCausalLM=FakeAutoModelForCausalLM,
+            AutoTokenizer=FakeAutoTokenizer,
+            pipeline=fake_pipeline,
+        ),
+    )
+
+    client = QwenClient(
+        model_id="Qwen/Qwen3.5-9B",
+        model_path="/tmp/qwen-runtime",
+    )
+
+    generated = client.generate_text("hello")
+
+    assert generated == '{"operator_message":"ok"}'
+    assert captured["task"] == "text-generation"
+    assert captured["tokenizer_model_path"] == "/tmp/qwen-runtime"
+    assert captured["tokenizer_kwargs"] == {
+        "local_files_only": True,
+    }
+    assert captured["model_model_path"] == "/tmp/qwen-runtime"
+    assert captured["model_kwargs"] == {
+        "device_map": "auto",
+        "local_files_only": True,
+        "torch_dtype": "auto",
+    }
+    assert captured["pipeline_kwargs"] == {
+        "model": fake_model,
+        "tokenizer": fake_tokenizer,
+    }

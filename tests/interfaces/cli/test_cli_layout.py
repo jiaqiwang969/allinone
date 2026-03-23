@@ -8,6 +8,7 @@ def test_cli_and_remote_scripts_exist():
     expected = [
         "src/allinone/interfaces/cli/main.py",
         "ops/remote/bootstrap_server.sh",
+        "ops/remote/install_qwen_runtime.sh",
         "ops/remote/sync_to_server.sh",
         "ops/remote/run_runtime_loop.sh",
     ]

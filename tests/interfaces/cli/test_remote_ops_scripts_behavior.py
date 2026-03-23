@@ -13,6 +13,17 @@ def test_remote_ops_scripts_contain_real_sync_and_runtime_commands():
             "--exclude '.venv'",
             "--exclude '.worktrees'",
         ],
+        "ops/remote/install_qwen_runtime.sh": [
+            "/home/dell/workspaces/allinone",
+            "https://download.pytorch.org/whl/cu126",
+            "torch==2.7.1",
+            "torchvision==0.22.1",
+            "torchaudio==2.7.1",
+            "transformers",
+            "accelerate",
+            "sentencepiece",
+            "safetensors",
+        ],
         "ops/remote/sync_to_server.sh": [
             "rsync",
             "dell@192.168.1.104",
