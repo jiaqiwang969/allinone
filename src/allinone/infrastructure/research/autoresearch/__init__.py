@@ -1,0 +1,1 @@
+"""Autoresearch adapter package."""

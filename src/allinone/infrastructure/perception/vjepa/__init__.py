@@ -1,0 +1,1 @@
+"""V-JEPA adapter package."""
