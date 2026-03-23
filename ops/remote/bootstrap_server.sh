@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REMOTE_HOST="${REMOTE_HOST:-dell@192.168.1.104}"
-REMOTE_ROOT="${REMOTE_ROOT:-/media/dell/eef6db82-afa8-4850-96b0-fdad3cf7025d/workspaces/allinone}"
+REMOTE_ROOT="${REMOTE_ROOT:-/home/dell/workspaces/allinone}"
 
 ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_ROOT'"
 rsync -av --delete \

@@ -4,9 +4,18 @@ from pathlib import Path
 def test_remote_ops_scripts_contain_real_sync_and_runtime_commands():
     root = Path("/Users/jqwang/31-allinone")
     expectations = {
-        "ops/remote/bootstrap_server.sh": ["python3 -m venv", "pip install -e"],
-        "ops/remote/sync_to_server.sh": ["rsync", "dell@192.168.1.104"],
+        "ops/remote/bootstrap_server.sh": [
+            "python3 -m venv",
+            "pip install -e",
+            "/home/dell/workspaces/allinone",
+        ],
+        "ops/remote/sync_to_server.sh": [
+            "rsync",
+            "dell@192.168.1.104",
+            "/home/dell/workspaces/allinone",
+        ],
         "ops/remote/run_runtime_loop.sh": [
+            "/home/dell/workspaces/allinone",
             "python3 -m allinone.interfaces.cli.main guidance-smoke",
             "python3 -m allinone.interfaces.cli.main research-smoke",
         ],
