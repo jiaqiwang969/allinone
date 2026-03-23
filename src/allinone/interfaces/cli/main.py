@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from allinone.application.runtime.build_clip_perception_payload import (
@@ -15,6 +16,7 @@ from allinone.application.runtime.build_raw_perception_payload import (
 from allinone.application.runtime.build_observation_payload import (
     build_observation_payload_from_raw,
 )
+from allinone.application.research.run_experiment_batch import run_experiment_batch
 from allinone.application.research.register_experiment import register_experiment
 from allinone.application.runtime.ingest_observation_window import (
     ingest_observation_window,
@@ -25,6 +27,7 @@ from allinone.application.runtime.run_runtime_observation import (
 from allinone.application.runtime.request_guidance_decision import (
     request_guidance_decision,
 )
+from allinone.infrastructure.language.qwen.client import QwenClient
 from allinone.infrastructure.perception.video.sampler import ClipFrameSampler
 from allinone.infrastructure.perception.vjepa.encoder import VJEPAEncoderAdapter
 from allinone.infrastructure.perception.yolo.detector import (
@@ -33,6 +36,16 @@ from allinone.infrastructure.perception.yolo.detector import (
 from allinone.infrastructure.research.autoresearch.replay_adapter import (
     AutoresearchReplayAdapter,
 )
+from allinone.infrastructure.research.autoresearch.run_writer import (
+    AutoresearchRunWriter,
+)
+
+_DEFAULT_LANGUAGE_OUTPUT = """{
+    "operator_message": "请向左移动，让仪表回到画面中央。",
+    "suggested_action": "left",
+    "confidence": 0.82,
+    "evidence_focus": "确保整个表盘完整可见"
+}"""
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -62,6 +75,15 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("research-smoke")
     runtime_observation = subparsers.add_parser("runtime-observation")
     runtime_observation.add_argument("--input", required=True)
+    run_experiment = subparsers.add_parser("run-experiment")
+    run_experiment.add_argument("--manifest", required=True)
+    run_experiment.add_argument("--run-dir", required=True)
+    run_experiment.add_argument("--candidate", required=True)
+    run_experiment.add_argument("--yolo-model", required=True)
+    run_experiment.add_argument("--vjepa-repo", required=True)
+    run_experiment.add_argument("--vjepa-checkpoint", required=True)
+    run_experiment.add_argument("--device", required=False)
+    run_experiment.add_argument("--sample-frames", required=False, type=int, default=8)
     return parser
 
 
@@ -163,14 +185,61 @@ def _run_analyze_clip(
 
 
 def _run_language_smoke() -> int:
-    result = run_runtime_observation_usecase(payload=_build_sample_payload())
+    result = run_runtime_observation_usecase(
+        payload=_build_sample_payload(),
+        text_generator=_CliRuntimeTextGenerator(),
+    )
     return _print_runtime_result(result)
 
 
 def _run_runtime_observation(input_path: str) -> int:
     payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
-    result = run_runtime_observation_usecase(payload=payload)
+    result = run_runtime_observation_usecase(
+        payload=payload,
+        text_generator=_CliRuntimeTextGenerator(),
+    )
     return _print_runtime_result(result)
+
+
+def _run_experiment(
+    manifest_path: str,
+    run_dir: str,
+    candidate_name: str,
+    yolo_model_path: str,
+    vjepa_repo: str,
+    vjepa_checkpoint: str,
+    device: str | None,
+    sample_frames: int,
+) -> int:
+    batch = run_experiment_batch(
+        manifest_rows=_load_manifest_rows(manifest_path),
+        candidate_name=candidate_name,
+        clip_analyzer=lambda *, clip_path, target_labels: build_raw_perception_payload_from_clip(
+            clip_path=clip_path,
+            target_labels=target_labels,
+            sampler=ClipFrameSampler(frame_count=sample_frames),
+            detector=UltralyticsDetectorAdapter(
+                model_path=yolo_model_path,
+                device=device,
+            ),
+            clip_scorer=VJEPAEncoderAdapter(
+                repo_path=vjepa_repo,
+                checkpoint_path=vjepa_checkpoint,
+                device=device,
+            ),
+        ),
+        runtime_runner=run_runtime_observation_usecase,
+        run_writer=AutoresearchRunWriter(run_dir=run_dir),
+    )
+    summary = batch["run_artifacts"]["summary"]
+    print(
+        f"run_dir={batch['run_artifacts']['run_dir']} "
+        f"candidate={candidate_name} "
+        f"action_match_rate={float(summary['action_match_rate']):.2f} "
+        f"target_detected_rate={float(summary['target_detected_rate']):.2f} "
+        f"usable_clip_rate={float(summary['usable_clip_rate']):.2f}"
+    )
+    return 0
 
 
 def _build_sample_payload() -> dict[str, object]:
@@ -195,6 +264,34 @@ def _print_runtime_result(result: dict[str, object]) -> int:
         f"message={result['operator_message']}"
     )
     return 0
+
+
+def _load_manifest_rows(manifest_path: str) -> list[dict[str, object]]:
+    return [
+        json.loads(line)
+        for line in Path(manifest_path).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _resolve_qwen_recipe_path() -> Path:
+    override = os.environ.get("ALLINONE_QWEN_RECIPE")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[4] / "configs/model_recipes/qwen35_9b.yaml"
+
+
+class _CliRuntimeTextGenerator:
+    def generate(self, prompt: str) -> tuple[str, str]:
+        recipe = _resolve_qwen_recipe_path()
+        if recipe.exists():
+            try:
+                client = QwenClient.from_recipe(recipe)
+                if client.is_runtime_available():
+                    return client.generate_text(prompt), "qwen"
+            except RuntimeError:
+                pass
+        return _DEFAULT_LANGUAGE_OUTPUT, "mock"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -227,6 +324,17 @@ def main(argv: list[str] | None = None) -> int:
         return _run_language_smoke()
     if args.command == "runtime-observation":
         return _run_runtime_observation(args.input)
+    if args.command == "run-experiment":
+        return _run_experiment(
+            manifest_path=args.manifest,
+            run_dir=args.run_dir,
+            candidate_name=args.candidate,
+            yolo_model_path=args.yolo_model,
+            vjepa_repo=args.vjepa_repo,
+            vjepa_checkpoint=args.vjepa_checkpoint,
+            device=args.device,
+            sample_frames=args.sample_frames,
+        )
     if args.command == "research-smoke":
         return _run_research_smoke()
     return 1

@@ -207,3 +207,132 @@ def test_analyze_clip_command_writes_clip_raw_perception_payload(
     assert exit_code == 0
     assert payload["detections"]["best_frame_index"] == 2
     assert payload["vjepa"]["alignment_score"] == 0.87
+
+
+def test_run_experiment_command_writes_run_directory(tmp_path, monkeypatch):
+    manifest = tmp_path / "manifest.jsonl"
+    run_dir = tmp_path / "runs" / "demo-run"
+    manifest.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "clip_id": "clip-001",
+                        "clip_path": "/data/clip-001.mp4",
+                        "target_labels": ["meter"],
+                        "task_type": "view_guidance",
+                        "expected_action": "left",
+                        "notes": "目标偏右",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "clip_id": "clip-002",
+                        "clip_path": "/data/clip-002.mp4",
+                        "target_labels": ["meter"],
+                        "task_type": "view_guidance",
+                        "expected_action": "hold_still",
+                        "notes": "目标已居中",
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_build_raw_perception_payload_from_clip(**kwargs):
+        if kwargs["clip_path"].endswith("clip-001.mp4"):
+            return {
+                "detections": {
+                    "prediction_rows": [
+                        {
+                            "label": "meter",
+                            "confidence": 0.97,
+                            "xyxy": [300, 90, 1000, 650],
+                        }
+                    ],
+                    "image_size": [1280, 720],
+                    "target_labels": ["meter"],
+                    "best_frame_index": 2,
+                },
+                "vjepa": {
+                    "visibility_score": 0.88,
+                    "readable_ratio": 0.81,
+                    "stability_score": 0.92,
+                    "alignment_score": 0.87,
+                },
+            }
+        return {
+            "detections": {
+                "prediction_rows": [],
+                "image_size": [1280, 720],
+                "target_labels": ["meter"],
+                "best_frame_index": 0,
+            },
+            "vjepa": {
+                "visibility_score": 0.74,
+                "readable_ratio": 0.79,
+                "stability_score": 0.83,
+                "alignment_score": 0.85,
+            },
+        }
+
+    def fake_run_runtime_observation_usecase(*, payload):
+        if payload["prediction_rows"]:
+            return {
+                "guidance_action": "left",
+                "reason": "target_shifted_right",
+                "language_action": "left",
+                "confidence": 0.82,
+                "operator_message": "请向左移动",
+                "evidence_focus": "表盘完整可见",
+                "language_source": "fake-qwen",
+            }
+        return {
+            "guidance_action": "hold_still",
+            "reason": "fully_centered",
+            "language_action": "hold_still",
+            "confidence": 0.77,
+            "operator_message": "保持当前角度",
+            "evidence_focus": "继续稳定画面",
+            "language_source": "fake-qwen",
+        }
+
+    monkeypatch.setattr(
+        "allinone.interfaces.cli.main.build_raw_perception_payload_from_clip",
+        fake_build_raw_perception_payload_from_clip,
+    )
+    monkeypatch.setattr(
+        "allinone.interfaces.cli.main.run_runtime_observation_usecase",
+        fake_run_runtime_observation_usecase,
+    )
+
+    exit_code = main(
+        [
+            "run-experiment",
+            "--manifest",
+            str(manifest),
+            "--run-dir",
+            str(run_dir),
+            "--candidate",
+            "baseline",
+            "--yolo-model",
+            "mock-yolo.pt",
+            "--vjepa-repo",
+            "/models/vjepa2",
+            "--vjepa-checkpoint",
+            "/models/vjepa2/model.pt",
+        ]
+    )
+
+    assert exit_code == 0
+    assert (run_dir / "manifest.jsonl").exists()
+    assert (run_dir / "results.jsonl").exists()
+    assert (run_dir / "summary.json").exists()
+    assert json.loads((run_dir / "summary.json").read_text(encoding="utf-8")) == {
+        "candidate_name": "baseline",
+        "clip_count": 2,
+        "action_match_rate": 1.0,
+        "target_detected_rate": 0.5,
+        "usable_clip_rate": 1.0,
+    }

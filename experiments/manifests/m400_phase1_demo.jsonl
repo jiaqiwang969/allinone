@@ -1,0 +1,2 @@
+{"clip_id": "m400-demo-001", "clip_path": "/data/m400/demo/m400-demo-001.mp4", "target_labels": ["meter"], "task_type": "view_guidance", "expected_action": "left", "notes": "目标偏右，期望提示左移"}
+{"clip_id": "m400-demo-002", "clip_path": "/data/m400/demo/m400-demo-002.mp4", "target_labels": ["meter"], "task_type": "view_guidance", "expected_action": "hold_still", "notes": "目标基本居中，期望提示保持"}
